@@ -143,6 +143,23 @@ def visible_paths(paths: list) -> list:
     return [path for path in paths if not (path.endswith(".meta") and path[:-5] in names)]
 
 
+MERGE_SUBJECT = re.compile(
+    r"Merge (?:remote-tracking )?branch '([^']+)'(\s+of\s+\S+)?(?:\s+into\s+'?([^'\s]+)'?)?", re.IGNORECASE)
+
+
+def merge_sides(subject: str, branch: str) -> tuple:
+    """从合并说明猜两侧分支名，返回 (第一父=合并人本地那侧, 第二父=合进来的那侧)。"""
+    match = MERGE_SUBJECT.search(subject or "")
+    if not match:
+        return f"本地 {branch}", "合进来的分支"
+    theirs = re.sub(r"^(origin|remotes/origin)/", "", match.group(1))
+    ours = match.group(3) or branch
+    pulled = bool(match.group(2)) or match.group(1).startswith(("origin/", "remotes/"))
+    if theirs == ours:
+        return f"本地 {ours}", f"远端 {theirs}"
+    return f"本地 {ours}", f"远端 {theirs}" if pulled else theirs
+
+
 def scan_merges(git, ref: str, since: str) -> tuple:
     """返回 (疑似炸线列表, 查过的合并数)。"""
     ok, out = git(["log", ref, "--merges", f"-n{MERGE_SCAN_LIMIT}", f"--since={since}",
@@ -167,11 +184,12 @@ def scan_merges(git, ref: str, since: str) -> tuple:
             for path in dropped:
                 if NOISE_PATTERN.search(path):
                     continue
-                files.append({"path": path, "lost": lost, "keep": keep})
+                files.append({"path": path, "lost": lost, "keep": keep, "side": 1 if lost == p1 else 2})
         if not files:
             continue
         shown = visible_paths([item["path"] for item in files])
         shown_set = set(shown)
+        sides = merge_sides(subject, ref.split("/", 1)[-1])
         details = []
         for item in files:
             if item["path"] not in shown_set or len(details) >= FILES_SHOWN:
@@ -180,6 +198,7 @@ def scan_merges(git, ref: str, since: str) -> tuple:
                 "path": item["path"],
                 "commits": lost_commits(git, item["keep"], item["lost"], item["path"]),
                 "state": file_state(git, ref, merge, item["lost"], item["path"]),
+                "lost_branch": sides[item["side"] - 1],
             })
         found.append({"merge": merge[:11], "author": author, "date": date, "at": at, "subject": subject,
                       "count": len(shown), "paths": shown, "files": details})
@@ -210,21 +229,118 @@ def _commit_line(line: str) -> str:
     return f"{author} {date}「{subject[:40]}」`{short}`"
 
 
+def _lost_whose(detail: dict) -> str:
+    return "；".join(_commit_line(line) for line in detail.get("commits") or []) or "对面那侧的修改"
+
+
+def _short_path(path: str) -> str:
+    return "/".join(str(path or "").split("/")[-3:])
+
+
+def group_by_author(merges: list) -> list:
+    """按合并人归组，保持首次出现顺序。返回 [(合并人, [合并...])]。"""
+    groups = {}
+    for item in merges:
+        groups.setdefault(item.get("author") or "未知", []).append(item)
+    return list(groups.items())
+
+
+def _person_title(author: str, items: list) -> str:
+    total = sum(item.get("count") or 0 for item in items)
+    return f"**{author}** 合并 {len(items)} 次，丢了 {total} 个文件的修改"
+
+
 def format_report(branch: str, merges: list, forced: list) -> str:
-    blocks = []
+    """纯文本/markdown 版（看板记录、自检复盘用）。分支名单独一行，按合并人归组。"""
+    if not merges and not forced:
+        return ""
+    blocks = [f"**【{branch}】**"]
     for item in forced:
         lost = "；".join(_commit_line(line) for line in item["lost"][:5]) or "没列出被冲掉的提交"
-        blocks.append(f"**{branch} 疑似被强推**（{item['when']}）`{item['old']}` → `{item['new']}`\n冲掉：{lost}")
-    for item in merges:
-        lines = [f"**{branch}** `{item['merge']}` {item['date']} **{item['author']}** 合并，丢了 {item['count']} 个文件的修改："]
-        for detail in item["files"]:
-            name = "/".join(detail["path"].split("/")[-3:])
-            whose = "；".join(_commit_line(line) for line in detail["commits"]) or "对面那侧的修改"
-            lines.append(f"· `{name}`（{detail['state']}）丢的是：{whose}")
-        if item["count"] > len(item["files"]):
-            lines.append(f"· 另外还有 {item['count'] - len(item['files'])} 个文件")
+        blocks.append(f"**疑似被强推**（{item['when']}）`{item['old']}` → `{item['new']}`\n冲掉：{lost}")
+    for author, items in group_by_author(merges):
+        lines = [_person_title(author, items)]
+        for item in items:
+            lines.append(f"合并 `{item['merge']}` {item['date']}：")
+            for detail in item["files"]:
+                branch_note = f" · 丢的分支：{detail['lost_branch']}" if detail.get("lost_branch") else ""
+                lines.append(f"· `{_short_path(detail['path'])}`（{detail['state']}{branch_note}）丢的是：{_lost_whose(detail)}")
+            if item["count"] > len(item["files"]):
+                lines.append(f"· 另外还有 {item['count'] - len(item['files'])} 个文件")
         blocks.append("\n".join(lines))
     return "\n\n".join(blocks)
+
+
+CARD_TABLES_MAX = 5  # 飞书卡片表格组件数量有限，超出的人并进最后一张表
+CARD_COLUMNS = (("merge", "合并"), ("file", "文件"), ("state", "状态"), ("branch", "丢的分支"), ("whose", "丢的提交"))
+
+
+def _table_rows(items: list, with_author: bool = False) -> list:
+    rows = []
+    for item in items:
+        head = f"{item['merge']}\n{item['date']}"
+        if with_author:
+            head = f"{item.get('author') or ''}\n{head}"
+        for detail in item["files"]:
+            rows.append({"merge": head, "file": _short_path(detail["path"]), "state": detail["state"],
+                         "branch": detail.get("lost_branch") or "对面那侧", "whose": _lost_whose(detail)})
+        if item["count"] > len(item["files"]):
+            rows.append({"merge": head, "file": f"另外还有 {item['count'] - len(item['files'])} 个文件",
+                         "state": "", "branch": "", "whose": "完整列表看炸线看板"})
+    return rows
+
+
+def _table(rows: list) -> dict:
+    return {
+        "tag": "table", "page_size": 10, "row_height": "auto", "freeze_first_column": False,
+        "header_style": {"text_align": "left", "text_size": "normal", "background_style": "grey",
+                         "bold": True, "lines": 1},
+        "columns": [{"name": key, "display_name": label, "data_type": "text", "width": "auto",
+                     "horizontal_align": "left", "vertical_align": "top"} for key, label in CARD_COLUMNS],
+        "rows": rows,
+    }
+
+
+def build_card(title: str, intro: str, results: list, note: str = "") -> dict:
+    """飞书交互卡片（schema 2.0）：分支名一行，下面每个合并人一张表。results=[(分支, 合并, 强推)]。"""
+    elements = []
+    if intro:
+        elements.append({"tag": "markdown", "content": intro})
+    groups = [(branch, author) for branch, merges, _forced in results for author, _items in group_by_author(merges)]
+    own = set(groups if len(groups) <= CARD_TABLES_MAX else groups[:CARD_TABLES_MAX - 1])
+    overflow = []
+    for branch, merges, forced in results:
+        if not merges and not forced:
+            continue
+        elements.append({"tag": "markdown", "content": f"**【{branch}】**"})
+        for item in forced:
+            lost = "；".join(_commit_line(line) for line in item["lost"][:5]) or "没列出被冲掉的提交"
+            elements.append({"tag": "markdown",
+                             "content": f"**疑似被强推**（{item['when']}）`{item['old']}` → `{item['new']}`\n冲掉：{lost}"})
+        for author, items in group_by_author(merges):
+            if (branch, author) not in own:
+                overflow.append((branch, items))
+                continue
+            elements.append({"tag": "markdown", "content": _person_title(author, items)})
+            elements.append(_table(_table_rows(items)))
+    if overflow:
+        names = "、".join(dict.fromkeys(items[0].get("author") or "" for _branch, items in overflow))
+        elements.append({"tag": "markdown", "content": f"**其他人**（{names}）"})
+        rows = []
+        for branch, items in overflow:
+            for row in _table_rows(items, with_author=True):
+                row["merge"] = f"{branch} · {row['merge']}"
+                rows.append(row)
+        elements.append(_table(rows))
+    if note:
+        elements.append({"tag": "hr"})
+        elements.append({"tag": "markdown", "content": f"<font color='grey'>{note}</font>"})
+    return {
+        "schema": "2.0",
+        "config": {"width_mode": "fill"},
+        "header": {"title": {"tag": "plain_text", "content": title}, "template": "red"},
+        "body": {"elements": elements},
+    }
 
 
 BOMB_NOTE = "判断依据：某文件在被合进来的那一侧改过，合并结果却和另一侧完全一样，说明那侧修改被整份丢掉（多半是解冲突选了「用我的」）。也可能是故意保留，所以算疑似，请当事人确认。"

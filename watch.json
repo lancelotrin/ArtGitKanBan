@@ -1,0 +1,27 @@
+{
+  "enabled": true,
+  "interval_sec": 1800,
+  "lookback_days": 1,
+  "rules": [
+    {
+      "path": "Assets/Bundle/Shader",
+      "exts": [
+        ".shader",
+        ".hlsl"
+      ]
+    }
+  ],
+  "seen": {
+    "main": "f536c382f9106f5a9bee4c32363bdd0943ea88e8",
+    "CBT2_bugfix": "97ca136ff491a50b7d60b449a7c4bbe76d8353fa"
+  },
+  "told": {
+    "main": [],
+    "CBT2_bugfix": []
+  },
+  "next_at": "2026-11-05T21:24:19+08:00",
+  "revision": 1,
+  "told_days": 1,
+  "last_result": "最近 1 天没有新的匹配文件。",
+  "last_at": "2026-11-05T20:54:19+08:00"
+}

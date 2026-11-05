@@ -1,0 +1,19 @@
+{
+  "told": [
+    "cb81e9adec1",
+    "cb2bcfdff50",
+    "b404ff1f4ba",
+    "697242bb42e"
+  ],
+  "recent": [
+    {
+      "at": "2026-11-05T20:55:13+08:00",
+      "sent": true,
+      "text": "**main** `cb81e9adec1` 11-05 14:04 **zhangyanjun** 合并，丢了 1 个文件的修改：\n· `UIControls/NodeStateController/NodeState.cs`（之后又改过，要人工看）丢的是：对面那侧的修改\n\n**main** `cb2bcfdff50` 11-04 19:20 **gexianglin** 合并，丢了 2 个文件的修改：\n· `Crocodile/Mesh/FX_Crocodile_Ground_01.FBX.meta`（还丢着）丢的是：对面那侧的修改\n· `Crocodile/Mesh/Fx_Role_Crocodile_UL_02.FBX.meta`（还丢着）丢的是：对面那侧的修改\n\n**main** `b404ff1f4ba` 11-04 19:19 **gexianglin** 合并，丢了 136 个文件的修改：\n· `.fork/custom-commands.json`（还丢着）丢的是：gexianglin 11-04 12:20「Fork 支持 reset hard」`74fa5d22edb`；gexianglin 11-04 10:53「Fork 支持 reset hard」`c466f92089a`\n· `Crocodile/Timeline/UL_Role_Crocodile.prefab`（还丢着）丢的是：zengwei 11-03 15:14「奥义小黑盒修改」`0a091076018`\n· `Scene/OP_Baratie03/OP_Baratie03.unity`（之后又改过，要人工看）丢的是：zhanghaipeng 11-04 15:48「【scene，asset】OP_Baratie03场景重新烘焙 PerfectC」`71cc9f7c1b1`\n· `Shader/ShaderVariants/ShaderVariantWarmupList.txt`（还丢着）丢的是：gexianglin 11-03 15:20「从shader分支合并」`449f54363bc`\n· `Shader/ShaderVariants/ShaderVariantWarmupList_Battle.txt`（还丢着）丢的是：gexianglin 11-03 15:20「从shader分支合并」`449f54363bc`\n· `Shader/ShaderVariants/ShaderVariantWarmupList_Resources.txt`（还丢着）丢的是：gexianglin 11-03 15:20「从shader分支合并」`449f54363bc`\n· 另外还有 130 个文件\n\n**CBT2_bugfix** `697242bb42e` 11-04 16:23 **liangkangshuo** 合并，丢了 2 个文件的修改：\n· `StreamingAssets/Battle/Buff.bytes`（之后又改过，要人工看）丢的是：liangkangshuo 11-04 16:22「肉鸽词条冷却」`79eb2106136`\n· `StreamingAssets/Battle/BuffPVP.bytes`（之后又改过，要人工看）丢的是：liangkangshuo 11-04 16:22「肉鸽词条冷却」`79eb2106136`\n\n判断依据：某文件在被合进来的那一侧改过，合并结果却和另一侧完全一样，说明那侧修改被整份丢掉（多半是解冲突选了「用我的」）。也可能是故意保留，所以算疑似，请当事人确认。"
+    }
+  ],
+  "last_at": "2026-11-05T20:55:13+08:00",
+  "last_result": "查了最近 2 天 160 个合并，新报 4 条。忽略路径滤掉 12 个文件。",
+  "run_requested": false,
+  "next_at": "2026-11-05T21:25:26+08:00"
+}

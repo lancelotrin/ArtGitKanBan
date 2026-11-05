@@ -985,11 +985,40 @@ def sent_message_id(payload_text: str, request_message_id: str) -> str:
     return found[0] if found else ""
 
 
+class CardReply(str):
+    """回答文本本身照常记历史；带着一张飞书交互卡片，reply 时发卡片（表格等 post 渲染不了的内容）。"""
+    card: dict = None
+
+    @classmethod
+    def make(cls, text: str, card: dict) -> "CardReply":
+        value = cls(text)
+        value.card = card
+        return value
+
+
+def redact_card(node):
+    if isinstance(node, str):
+        return redact(node)
+    if isinstance(node, list):
+        return [redact_card(item) for item in node]
+    if isinstance(node, dict):
+        return {key: redact_card(value) for key, value in node.items()}
+    return node
+
+
+def card_content(card: dict) -> str:
+    return json.dumps(redact_card(card), ensure_ascii=False)
+
+
 def reply(message_id: str, text: str, markdown: bool = False, route: str = "") -> None:
-    if route in FABRICATION_GUARDED_ROUTES:
+    card = getattr(text, "card", None)
+    if route in FABRICATION_GUARDED_ROUTES and not card:
         text = guard_fabrication(text, getattr(CURRENT_CHAT, "question", ""))
-    body_flag = "--markdown" if markdown else "--text"
-    args = ["im", "+messages-reply", "--as", "bot", "--message-id", message_id, body_flag, redact(text),
+    if card:
+        body = ["--msg-type", "interactive", "--content", card_content(card)]
+    else:
+        body = ["--markdown" if markdown else "--text", redact(text)]
+    args = ["im", "+messages-reply", "--as", "bot", "--message-id", message_id, *body,
             "--idempotency-key", message_id]
     try:
         stdout = run_cli(args)
@@ -2807,12 +2836,26 @@ def send_groups(chat_ids: list, text: str, key: str, title: str) -> int:
     return sent
 
 
-def send_bomb_alert(text: str, key: str) -> bool:
-    """私聊朱辉，并同步发到后台配的炸线提醒群。任一成功就算发出，避免单边失败导致每半小时重报。"""
-    if not text:
+def send_card(target_flag: str, target: str, card: dict, key: str, label: str) -> bool:
+    try:
+        run_cli(["im", "+messages-send", "--as", "bot", target_flag, target, "--msg-type", "interactive",
+                 "--content", card_content(card), "--idempotency-key", key[:50]])
+    except (RuntimeError, subprocess.TimeoutExpired) as error:
+        log(f"[{label}] card failed {target} {error}")
+        return False
+    log(f"[{label}] card sent {target}")
+    return True
+
+
+def send_bomb_alert(card: dict, key: str) -> bool:
+    """私聊朱辉，并同步发到后台配的炸线提醒群（交互卡片，带表格）。任一成功就算发出，避免单边失败导致每半小时重报。"""
+    if not card:
         return True
-    dm_ok = send_owner_watch(text, f"bomb-dm-{key}"[:50], BOMB_TITLE)
-    chat_ok = send_groups(bomb_groups(load_bomb_state()), text, f"bomb-g-{key}", BOMB_TITLE) > 0
+    dm_ok = send_card("--user-id", PULL_OWNER_OPEN_IDS[0], card, f"bomb-dm-{key}", "bomb")
+    chat_ok = False
+    for chat_id in bomb_groups(load_bomb_state()):
+        suffix = hashlib.sha1(chat_id.encode("utf-8")).hexdigest()[:6]
+        chat_ok = send_card("--chat-id", chat_id, card, f"bomb-g-{key}-{suffix}", "bomb") or chat_ok
     return dm_ok or chat_ok
 
 
@@ -3031,7 +3074,8 @@ def answer_bomb(text: str) -> str:
     record_bomb_history(results, load_bomb_state().get("told"))
     ignore_paths = bomb_ignore_paths()
     alerted, dropped = alert_bomb_results(results, ignore_paths)
-    reports = [bomb.format_report(branch, merges, forced) for branch, merges, forced in alerted if merges or forced]
+    alerted = [(branch, merges, forced) for branch, merges, forced in alerted if merges or forced]
+    reports = [bomb.format_report(branch, merges, forced) for branch, merges, forced in alerted]
     names = "、".join(branches)
     tail = f"\n（{note}）" if note else ""
     if dropped:
@@ -3042,7 +3086,10 @@ def answer_bomb(text: str) -> str:
             empty = (f"{label} {names} 查了 {scanned} 个合并，提醒侧没有需要报的"
                      f"（忽略了 {dropped} 个自动上传目录下的文件），完整结果看炸线看板。")
         return f"{empty}{tail}".rstrip()
-    return f"{label} {names} 查了 {scanned} 个合并：\n\n" + "\n\n".join(reports) + f"\n\n{bomb.BOMB_NOTE}{tail}"
+    intro = f"{label} {names} 查了 {scanned} 个合并："
+    text = f"{intro}\n\n" + "\n\n".join(reports) + f"\n\n{bomb.BOMB_NOTE}{tail}"
+    card = bomb.build_card(BOMB_TITLE, intro, alerted, bomb.BOMB_NOTE + tail.replace("\n", " "))
+    return CardReply.make(text, card)
 
 
 def load_bomb_state() -> dict:
@@ -3143,11 +3190,13 @@ def run_bomb_once(days: int) -> None:
     alerted, dropped = alert_bomb_results(results, ignore_paths)
     fresh_keys = []
     reports = []
+    fresh = []
     for branch, merges, forced in alerted:
         new_merges = [item for item in merges if item["merge"] not in known]
         new_forced = [item for item in forced if f"force:{item['new']}" not in known]
         if new_merges or new_forced:
             reports.append(bomb.format_report(branch, new_merges, new_forced))
+            fresh.append((branch, new_merges, new_forced))
         fresh_keys += [item["merge"] for item in new_merges] + [f"force:{item['new']}" for item in new_forced]
     sent = True
     now_text = datetime.datetime.now(BEIJING_TZ).isoformat(timespec="seconds")
@@ -3156,7 +3205,7 @@ def run_bomb_once(days: int) -> None:
         if reports:
             body = "\n\n".join(reports) + f"\n\n{bomb.BOMB_NOTE}"
             key = hashlib.sha1("|".join(fresh_keys).encode("utf-8")).hexdigest()[:12]
-            sent = send_bomb_alert(body, key)
+            sent = send_bomb_alert(bomb.build_card(BOMB_TITLE, "", fresh, bomb.BOMB_NOTE), key)
             recent = [{"at": now_text, "sent": sent, "text": redact(body)[:4000]}] + list(state.get("recent") or [])
             state["recent"] = recent[:BOMB_RECENT_KEEP]
         if sent:

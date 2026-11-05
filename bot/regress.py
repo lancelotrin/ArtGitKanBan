@@ -137,7 +137,12 @@ def bomb_fake_ok() -> bool:
                    {"path": "Assets/DataTable/X.xml", "state": "还丢着", "commits": []}]},
     ]
     kept, dropped = bot.bomb.filter_merges_for_alert(sample, list(bot.bomb.DEFAULT_IGNORE_PATHS))
-    return (count == 1 and len(found) == 1 and [f["path"] for f in found[0]["files"]] == ["a.prefab"]
+    card = bot.bomb.build_card("疑似炸线", "", [("main", found + [dict(found[0], author="zhangsan")], [])], "note")
+    tags = [element["tag"] for element in card["body"]["elements"]]
+    card_ok = (card["schema"] == "2.0" and tags.count("table") == 2 and "**【main】**" in card["body"]["elements"][0]["content"]
+               and bot.bomb.merge_sides("Merge branch 'main' of http://x into main", "main") == ("本地 main", "远端 main")
+               and bot.bomb.merge_sides("Merge branch 'shader' into main", "main") == ("本地 main", "shader"))
+    return (card_ok and count == 1 and len(found) == 1 and [f["path"] for f in found[0]["files"]] == ["a.prefab"]
             and found[0]["files"][0]["state"] == "还丢着" and "wangqingyang" in report and "https" not in report
             and found[0]["at"] == "2026-11-03T12:18:00+08:00"
             and found[0].get("paths") == ["a.prefab"]
