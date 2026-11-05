@@ -462,7 +462,8 @@ def get_env(name: str) -> str:
 def find_lark_cli() -> list:
     shim = shutil.which("lark-cli")
     if not shim:
-        sys.exit("找不到 lark-cli，请先安装：npm i -g @larksuite/cli")
+        # 后台网页也会 import 本模块，没装 lark-cli 时别直接退出；机器人启动时再检查
+        return []
     run_js = os.path.join(os.path.dirname(shim), "node_modules", "@larksuite", "cli", "scripts", "run.js")
     if os.path.isfile(run_js):
         return ["node", run_js]
@@ -3205,7 +3206,7 @@ REVIEW_SUBS_PATH = os.path.join(BOT_DIR, "review_subs.json")
 REVIEW_STATE_PATH = os.path.join(BOT_DIR, "review_state.json")
 REVIEW_DIR = os.path.join(BOT_DIR, "reviews")
 REVIEW_KEEP_DAYS = 90
-REVIEW_WEB_PORT = 8770
+REVIEW_WEB_PORT = int(os.environ.get("CONSOLE_PORT", "8765"))  # 复盘挂在大豆后台 /review 下
 REVIEW_POLL_SEC = 60
 REVIEW_AUTHOR_PATTERN = re.compile(r"^[A-Za-z0-9\u4e00-\u9fff][A-Za-z0-9_.\-\u4e00-\u9fff ]{0,39}$")
 REVIEW_DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -3332,7 +3333,7 @@ def review_web_base() -> str:
         probe.close()
     except OSError:
         host = "127.0.0.1"
-    return f"http://{host}:{REVIEW_WEB_PORT}"
+    return f"http://{host}:{REVIEW_WEB_PORT}/review"
 
 
 def review_brief(report: str, commit_count: int, outgoing: str, incoming: str) -> str:
@@ -7768,6 +7769,8 @@ def preview_question(text: str) -> dict:
 def main() -> None:
     # lark-cli 下载图片的 --output 只接受相对当前目录的路径
     os.chdir(BOT_DIR)
+    if not LARK_CLI:
+        sys.exit("找不到 lark-cli，请先安装：npm i -g @larksuite/cli")
     if not os.path.isdir(PROJECT_ROOT):
         log(f"[start] 工程目录不存在：{PROJECT_ROOT}，设置 FEISHU_BOT_PROJECT_ROOT 指向 Client 目录")
     log(f"[start] project={PROJECT_ROOT}")

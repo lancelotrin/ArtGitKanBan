@@ -12,7 +12,10 @@ import subprocess
 import sys
 import threading
 import time
-import winreg
+try:
+    import winreg
+except ImportError:  # 非 Windows
+    winreg = None
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
@@ -30,8 +33,10 @@ PEOPLE_PATH = os.path.join(BOT_DIR, "people.json")
 REF_INDEX_PATH = os.path.join(BOT_DIR, "ref_index.sqlite")
 DEFAULT_ROOT = r"D:\Fork\onepiece_engine\Client"
 PYTHON = r"C:\Users\Administrator\AppData\Local\Programs\Python\Python314\python.exe"
-HOST = "127.0.0.1"
-PORT = 8765
+HOST = os.environ.get("CONSOLE_HOST", "127.0.0.1")
+PORT = int(os.environ.get("CONSOLE_PORT", "8765"))
+# 子站都挂在后台同一个端口下，只留一个入口
+MOUNTS = {"/review": "review_web", "/wish": "wish_web", "/bomb": "bomb_web"}
 BRANCH_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\-]{0,60}$")
 # 只放智谱免费的 flash 模型，第一个是默认。
 MODEL_CHOICES = {
@@ -927,7 +932,7 @@ function escAttr(text) { return esc(text).replace(/"/g, "&quot;").replace(/'/g, 
 function paintSites(data) {
   $("sites").innerHTML = (data.sites || []).map((site) =>
     "<div class='site'><div class='site-top'><span class='site-ico' style='background:" + escAttr(site.color) + "'>" + esc(site.icon) + "</span>"
-    + "<div><div class='site-name'>" + esc(site.name) + "</div><div class='site-port'>端口 " + esc(site.port) + "</div></div>"
+    + "<div><div class='site-name'>" + esc(site.name) + "</div><div class='site-port'>路径 " + esc(site.port) + "</div></div>"
     + "<span class='dot " + (site.online ? "up'>● 在线" : "down'>● 没起来") + "</span></div>"
     + "<div class='site-desc'>" + esc(site.desc) + "</div>"
     + "<div class='site-url'>" + esc(site.url) + "</div>"
@@ -1262,6 +1267,13 @@ def reminder_rows() -> list:
 
 
 def bot_processes() -> list:
+    if sys.platform != "win32":
+        try:
+            output = subprocess.check_output(["ps", "-axo", "pid=,command="], text=True, errors="replace", timeout=6)
+        except (OSError, subprocess.TimeoutExpired, subprocess.CalledProcessError):
+            return []
+        return [int(line.split(None, 1)[0]) for line in output.splitlines()
+                if ("echo_bot.py" in line or "event +subscribe" in line) and line.split(None, 1)[0].isdigit()]
     script = (
         "Get-Process python,node -ErrorAction SilentlyContinue | ForEach-Object { "
         "$cmd = (Get-CimInstance Win32_Process -Filter ('ProcessId=' + $_.Id)).CommandLine; "
@@ -1286,6 +1298,12 @@ def bot_processes() -> list:
 def stop_bot() -> int:
     pids = bot_processes()
     for pid in pids:
+        if sys.platform != "win32":
+            try:
+                os.kill(pid, 15)
+            except OSError:
+                pass
+            continue
         subprocess.run(["taskkill", "/PID", str(pid), "/F"], check=False, capture_output=True, creationflags=NO_WINDOW)
     return len(pids)
 
@@ -1296,6 +1314,8 @@ def start_bot() -> str:
     python = PYTHON if os.path.isfile(PYTHON) else sys.executable
     key = ""
     try:
+        if winreg is None:
+            raise OSError("no winreg")
         reg = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Environment")
         key = winreg.QueryValueEx(reg, "LLM_API_KEY")[0]
     except OSError:
@@ -1552,7 +1572,36 @@ class Handler(BaseHTTPRequestHandler):
             return {}
         return data if isinstance(data, dict) else {}
 
+    def mounted(self, method: str) -> bool:
+        """/review、/wish、/bomb 开头的请求交给对应子站的 Handler 处理。"""
+        path = urlparse(self.path).path
+        for prefix, module_name in MOUNTS.items():
+            if path != prefix and not path.startswith(prefix + "/"):
+                continue
+            if path == prefix:
+                query = urlparse(self.path).query
+                self.send_response(301)
+                self.send_header("Location", prefix + "/" + ("?" + query if query else ""))
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return True
+            module = __import__(module_name)
+            handler_class = next(v for v in vars(module).values()
+                                 if isinstance(v, type) and issubclass(v, BaseHTTPRequestHandler)
+                                 and v is not BaseHTTPRequestHandler and v.__module__ == module_name)
+            action = getattr(handler_class, "do_" + method, None)
+            if action is None:
+                self.send_error(405)
+                return True
+            self.path = self.path[len(prefix):]
+            self.__class__ = handler_class  # 同是 BaseHTTPRequestHandler，换类后直接复用子站逻辑
+            action(self)
+            return True
+        return False
+
     def do_GET(self) -> None:
+        if self.mounted("GET"):
+            return
         path = urlparse(self.path).path
         if path in ("/", "/index.html"):
             body = PAGE.encode("utf-8")
@@ -1642,6 +1691,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json({"error": "没有这个页面"}, 404)
 
     def do_POST(self) -> None:
+        if self.mounted("POST"):
+            return
         path = urlparse(self.path).path
         data = self.read_body()
         try:
@@ -1871,12 +1922,12 @@ def sites_view() -> dict:
     import wish_web
     host = echo_bot.review_web_base().rsplit(":", 1)[0]
     registry = (
-        ("自检复盘", "✓", "#3d5afe", review_web.PORT, "每天 0 点复盘名单里每个人前一天的提交，只读，所有人都能看。", "#sec-review"),
-        ("心愿墙", "✨", "#ff6f91", wish_web.PORT, "大家许愿想要的功能，+1 排优先级，有人接下来实现。", "#sec-wish"),
-        ("炸线看板", "⚡", "#e8590c", bomb_web.PORT, "疑似炸线和强推的历史：谁的修改丢了、补回没有。只读，保留 90 天。", "#sec-bomb"),
+        ("自检复盘", "✓", "#3d5afe", "/review", "每天 0 点复盘名单里每个人前一天的提交，只读，所有人都能看。", "#sec-review"),
+        ("心愿墙", "✨", "#ff6f91", "/wish", "大家许愿想要的功能，+1 排优先级，有人接下来实现。", "#sec-wish"),
+        ("炸线看板", "⚡", "#e8590c", "/bomb", "疑似炸线和强推的历史：谁的修改丢了、补回没有。只读，保留 90 天。", "#sec-bomb"),
     )
     sites = [{"name": name, "icon": icon, "color": color, "port": port, "desc": desc, "manage": manage,
-              "url": f"{host}:{port}/", "local": f"http://127.0.0.1:{port}/", "online": site_online(port)}
+              "url": f"{host}:{PORT}{port}/", "local": f"http://127.0.0.1:{PORT}{port}/", "online": True}
              for name, icon, color, port, desc, manage in registry]
     return {"sites": sites}
 
@@ -1926,11 +1977,8 @@ def start_bomb_web() -> None:
 
 def main() -> None:
     apply_models_here()
-    start_review_web()
-    start_wish_web()
-    start_bomb_web()
     server = QuietHTTPServer((HOST, PORT), Handler)
-    print(f"大豆后台 http://{HOST}:{PORT}", flush=True)
+    print(f"大豆后台 http://{HOST}:{PORT}  （复盘 /review/ · 心愿墙 /wish/ · 炸线看板 /bomb/）", flush=True)
     server.serve_forever()
 
 

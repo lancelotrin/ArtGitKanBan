@@ -241,7 +241,7 @@ function paintScan(scan) {
 }
 async function load() {
   try {
-    const response = await fetch("/api/bombs", { cache: "no-store" });
+    const response = await fetch("api/bombs", { cache: "no-store" });
     const data = await response.json();
     state.data = data;
     paintScan(data.scan || {});

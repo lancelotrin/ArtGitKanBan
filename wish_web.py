@@ -254,14 +254,14 @@ input:focus, textarea:focus { outline:none; border-color:var(--brand) !important
   document.querySelectorAll('.mask').forEach(function(m){ m.addEventListener('click',function(e){ if(e.target===m||e.target.hasAttribute('data-close')){ close(m); } }); });
   document.addEventListener('keydown',function(e){ if(e.key==='Escape'){ document.querySelectorAll('.mask.show').forEach(close); } });
 
-  function load(){ return fetch('/api/wishes').then(function(r){return r.json();}).then(function(d){
+  function load(){ return fetch('api/wishes').then(function(r){return r.json();}).then(function(d){
     state.wishes=d.wishes||[]; state.allow=!(d.settings&&d.settings.allow_create===false);
     var b=$('openNew'); b.disabled=!state.allow; b.textContent=state.allow?'✨ 发布心愿':'⏸ 暂停发布中'; b.title=state.allow?'':'管理员暂停了发布，可以先给已有的心愿点 ♥';
     render(); }); }
   function act(payload){
     if(!me()){ pending=payload; $('nName').value=''; open('nameMask'); setTimeout(function(){$('nName').focus();},50); return Promise.resolve(false); }
     payload.name=me();
-    return fetch('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
+    return fetch('api/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
       .then(function(r){return r.json();}).then(function(d){ toast(d.message||(d.ok?'好了':'没成功'),!d.ok); return d.ok? load().then(function(){return d;}) : false; })
       .catch(function(){ toast('网络出错了，再试一次',true); return false; });
   }

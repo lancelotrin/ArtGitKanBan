@@ -12,6 +12,8 @@ BOT_DIR = os.path.dirname(os.path.abspath(__file__))
 REVIEW_DIR = os.path.join(BOT_DIR, "reviews")
 HOST = "0.0.0.0"
 PORT = 8770
+# 挂在大豆后台下时的路径前缀（console.py 设成 /review）
+BASE = os.environ.get("REVIEW_BASE", "/review")
 DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 NAME_PATTERN = re.compile(r"^[A-Za-z0-9_.\-\u4e00-\u9fff]{1,40}$")
 FEISHU_LINK = re.compile(r"^https://project\.feishu\.cn/\w+/(story|issue)/detail/\d+$")
@@ -306,7 +308,7 @@ def page(title: str, hero: str, body: str, script: str = "") -> str:
     tail = f"<script>{script}</script>" if script else ""
     return (f'<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><title>{esc(title)}</title>'
             f'<meta name="viewport" content="width=device-width,initial-scale=1"><style>{STYLE}</style></head>'
-            f'<body><header><div class="hwrap"><a class="brand" href="/"><span class="logo">豆</span>大豆 · 自检复盘</a>{hero}</div></header>'
+            f'<body><header><div class="hwrap"><a class="brand" href="{BASE}/"><span class="logo">豆</span>大豆 · 自检复盘</a>{hero}</div></header>'
             f'<main>{body}</main>{tail}</body></html>')
 
 
@@ -338,11 +340,11 @@ def index_page(query_date: str) -> str:
     counts = {key: sum(1 for _, info in rows if key == "all" or key in info["tags"]) for key, _ in FILTERS}
     chips = "".join(f'<button class="chip{" on" if key == "all" else ""}" data-f="{key}">{text}<b>{counts[key]}</b></button>'
                     for key, text in FILTERS)
-    toolbar = (f'<div class="toolbar">{nav_button(older and "/?d=" + older, "‹", "前一天")}'
-               f'<form method="get" action="/"><input type="date" name="d" value="{esc(date)}" min="{esc(dates[-1])}" '
+    toolbar = (f'<div class="toolbar">{nav_button(older and BASE + "/?d=" + older, "‹", "前一天")}'
+               f'<form method="get" action="{BASE}/"><input type="date" name="d" value="{esc(date)}" min="{esc(dates[-1])}" '
                f'max="{esc(dates[0])}" onchange="this.form.submit()"></form>'
-               f'{nav_button(newer and "/?d=" + newer, "›", "后一天")}'
-               f'{nav_button("/" if date != dates[0] else "", "最新", "最新一天")}'
+               f'{nav_button(newer and BASE + "/?d=" + newer, "›", "后一天")}'
+               f'{nav_button(BASE + "/" if date != dates[0] else "", "最新", "最新一天")}'
                f'<span class="weekday">{weekday(date)}</span><div class="spacer"></div>'
                f'<input id="q" type="search" placeholder="搜名字或 git 作者"><div class="chips">{chips}</div></div>')
     stats = (f'<div class="stats"><div class="stat"><div class="k">复盘人数</div><div class="v">{len(rows)}</div></div>'
@@ -359,7 +361,7 @@ def index_page(query_date: str) -> str:
         if info["bomb"]:
             foot.append('<span class="b">疑似炸线</span>')
         state = " is-bomb" if info["bomb"] else (" is-risk" if info["risks"] else "")
-        cards.append(f'<a class="pcard{state}" href="/r/{esc(date)}/{esc(record["_file"])}" '
+        cards.append(f'<a class="pcard{state}" href="{BASE}/r/{esc(date)}/{esc(record["_file"])}" '
                      f'data-key="{esc((name + " " + author).lower())}" data-tags="{" ".join(info["tags"])}">'
                      f'<div class="ptop">{avatar(name)}<div><div class="pname">{esc(name)}</div>'
                      f'<div class="pauthor">{esc(author)}</div></div>{pill_html(info["pill"])}</div>'
@@ -384,11 +386,11 @@ def person_page(name: str) -> str:
             continue
         display = str(record.get("name") or name)
         info = summary_of(record)
-        rows.append(f'<tr><td><a href="/r/{esc(date)}/{esc(name)}">{esc(date)}</a></td><td>{weekday(date)}</td>'
+        rows.append(f'<tr><td><a href="{BASE}/r/{esc(date)}/{esc(name)}">{esc(date)}</a></td><td>{weekday(date)}</td>'
                     f'<td>{info["commits"]}</td><td>{pill_html(info["pill"])}</td><td>{render_inline(info["text"])}</td></tr>')
     if not rows:
         return ""
-    hero = (f'<div class="crumb"><a href="/">自检复盘</a> / {esc(display)}</div>'
+    hero = (f'<div class="crumb"><a href="{BASE}/">自检复盘</a> / {esc(display)}</div>'
             f'<div class="hero">{avatar(display, True)}<div><h1>{esc(display)} 的复盘历史</h1>'
             f'<div class="hsub">{esc(name)} · 共 {len(rows)} 天</div></div></div>')
     table = ('<table><tr><th>日期</th><th></th><th>提交</th><th>结论</th><th>概要</th></tr>' + "".join(rows) + "</table>")
@@ -403,9 +405,9 @@ def report_page(date: str, name: str) -> str:
     info = summary_of(record)
     person_dates = [day for day in list_dates() if load_record(day, name)]
     older, newer = neighbors(person_dates, date)
-    nav = (f'<div class="toolbar">{nav_button(older and f"/r/{older}/{name}", "‹", "他的前一天")}'
-           f'{nav_button(newer and f"/r/{newer}/{name}", "›", "他的后一天")}'
-           f'<a class="btn" href="/?d={esc(date)}">当天所有人</a><a class="btn" href="/p/{esc(name)}">他的历史</a>'
+    nav = (f'<div class="toolbar">{nav_button(older and f"{BASE}/r/{older}/{name}", "‹", "他的前一天")}'
+           f'{nav_button(newer and f"{BASE}/r/{newer}/{name}", "›", "他的后一天")}'
+           f'<a class="btn" href="{BASE}/?d={esc(date)}">当天所有人</a><a class="btn" href="{BASE}/p/{esc(name)}">他的历史</a>'
            f'<div class="spacer"></div><span class="weekday">生成于 {esc(str(record.get("generated_at") or "")[:16].replace("T", " "))}</span></div>')
     stats = (f'<div class="stats"><div class="stat"><div class="k">提交</div><div class="v">{info["commits"]}</div></div>'
              f'<div class="stat{" warn" if info["risks"] else ""}"><div class="k">需要留意</div><div class="v">{info["risks"]}</div></div>'
@@ -434,7 +436,7 @@ def report_page(date: str, name: str) -> str:
         blocks.append(f'<section class="panel"><h2>复盘</h2>{render_md(record["report_md"])}</section>')
     if record.get("status") == "empty":
         blocks.append('<section class="panel none">这天在 main 和 CBT2_bugfix 上没有提交。</section>')
-    hero = (f'<div class="crumb"><a href="/">自检复盘</a> / <a href="/?d={esc(date)}">{esc(date)}</a> / {esc(display)}</div>'
+    hero = (f'<div class="crumb"><a href="{BASE}/">自检复盘</a> / <a href="{BASE}/?d={esc(date)}">{esc(date)}</a> / {esc(display)}</div>'
             f'<div class="hero">{avatar(display, True)}<div><h1>{esc(display)}{pill_html(info["pill"])}</h1>'
             f'<div class="hsub">{esc(record.get("git_author"))} · {esc(date)} {weekday(date)}</div></div></div>')
     return page(f"{display} {date} 复盘", hero, "".join(blocks))
@@ -466,7 +468,7 @@ class ReviewHandler(BaseHTTPRequestHandler):
         if body:
             self.send_html(body)
         else:
-            self.send_html(page("没找到", "<h1>没有这页</h1>", '<div class="panel none">没有这页。<a href="/">回首页</a></div>'), 404)
+            self.send_html(page("没找到", "<h1>没有这页</h1>", f'<div class="panel none">没有这页。<a href="{BASE}/">回首页</a></div>'), 404)
 
 
 
