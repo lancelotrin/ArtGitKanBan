@@ -20,7 +20,11 @@ if pgrep -f "console.py" > /dev/null; then
   pgrep -f "console.py" > /dev/null && pkill -9 -f "console.py"
 fi
 
-echo "启动 console.py…"
+# 别的电脑要通过 onepiece.local:8765 访问，所以默认听所有网卡；只想本机用时：CONSOLE_HOST=127.0.0.1 ./restart.sh
+# 新看板后端（8766）始终只听本机，由 console.py 转发过去。
+export CONSOLE_HOST="${CONSOLE_HOST:-0.0.0.0}"
+
+echo "启动 console.py（监听 $CONSOLE_HOST:8765）…"
 nohup "$PY" console.py > console.log 2>&1 &
 sleep 3
 
