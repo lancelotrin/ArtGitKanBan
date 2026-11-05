@@ -1,0 +1,6 @@
+sessions/
+run/
+dist/
+data/
+__pycache__/
+*.pyc

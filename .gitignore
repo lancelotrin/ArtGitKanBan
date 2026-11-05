@@ -31,3 +31,8 @@ last_shader.json
 # IDE
 .idea/
 .DS_Store
+
+# 合并确认
+merge_projects.json
+MergeReviewPortable/sessions/
+MergeReviewPortable/run/

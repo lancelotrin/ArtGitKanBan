@@ -36,7 +36,7 @@ PYTHON = r"C:\Users\Administrator\AppData\Local\Programs\Python\Python314\python
 HOST = os.environ.get("CONSOLE_HOST", "127.0.0.1")
 PORT = int(os.environ.get("CONSOLE_PORT", "8765"))
 # 子站都挂在后台同一个端口下，只留一个入口
-MOUNTS = {"/review": "review_web", "/wish": "wish_web", "/bomb": "bomb_web"}
+MOUNTS = {"/review": "review_web", "/wish": "wish_web", "/bomb": "bomb_web", "/merge": "merge_web"}
 BRANCH_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\-]{0,60}$")
 # 只放智谱免费的 flash 模型，第一个是默认。
 MODEL_CHOICES = {
@@ -1925,6 +1925,7 @@ def sites_view() -> dict:
         ("自检复盘", "✓", "#3d5afe", "/review", "每天 0 点复盘名单里每个人前一天的提交，只读，所有人都能看。", "#sec-review"),
         ("心愿墙", "✨", "#ff6f91", "/wish", "大家许愿想要的功能，+1 排优先级，有人接下来实现。", "#sec-wish"),
         ("炸线看板", "⚡", "#e8590c", "/bomb", "疑似炸线和强推的历史：谁的修改丢了、补回没有。只读，保留 90 天。", "#sec-bomb"),
+        ("合并确认", "⇄", "#176c4e", "/merge", "merge 冲突逐文件确认选边：上传会话 zip，或在本机检查工程并采集冲突。", ""),
     )
     sites = [{"name": name, "icon": icon, "color": color, "port": port, "desc": desc, "manage": manage,
               "url": f"{host}:{PORT}{port}/", "local": f"http://127.0.0.1:{PORT}{port}/", "online": True}
@@ -1978,7 +1979,7 @@ def start_bomb_web() -> None:
 def main() -> None:
     apply_models_here()
     server = QuietHTTPServer((HOST, PORT), Handler)
-    print(f"大豆后台 http://{HOST}:{PORT}  （复盘 /review/ · 心愿墙 /wish/ · 炸线看板 /bomb/）", flush=True)
+    print(f"大豆后台 http://{HOST}:{PORT}  （复盘 /review/ · 心愿墙 /wish/ · 炸线看板 /bomb/ · 合并确认 /merge/）", flush=True)
     server.serve_forever()
 
 
