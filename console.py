@@ -3,6 +3,7 @@
 启动：python D:\\FeishuBot\\console.py
 浏览器打开 http://127.0.0.1:8765
 """
+import http.client
 import json
 import os
 import re
@@ -37,6 +38,11 @@ HOST = os.environ.get("CONSOLE_HOST", "127.0.0.1")
 PORT = int(os.environ.get("CONSOLE_PORT", "8765"))
 # 子站都挂在后台同一个端口下，只留一个入口
 MOUNTS = {"/review": "review_web", "/wish": "wish_web", "/bomb": "bomb_web", "/merge": "merge_web"}
+# 迁到新栈（server/ FastAPI + web/ React）的看板：这些前缀转发给本机的新后端，优先于 MOUNTS。
+# 新后端没起来时为 None，对应看板继续用 MOUNTS 里的旧页面。
+BOARD_API = None
+HOP_HEADERS = {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailers",
+               "transfer-encoding", "upgrade", "content-length", "x-forwarded-for", "server", "date"}
 BRANCH_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\-]{0,60}$")
 # 只放智谱免费的 flash 模型，第一个是默认。
 MODEL_CHOICES = {
@@ -1391,7 +1397,11 @@ def start_bot() -> str:
         lines = open(ERR_PATH, encoding="utf-8", errors="replace").read().strip().splitlines()
     except OSError:
         lines = []
-    reason = lines[-1] if lines else f"退出码 {proc.returncode}"
+    if not lines:
+        # 订阅失败时 echo_bot 正常退出，错误只在 bot.log 里，挑 lark-cli 的 message / hint 出来
+        lines = [re.sub(r'^\[\w+\]\s*"(message|hint)":\s*', "", line).strip().rstrip(",").strip('"')
+                 for line in read_log().splitlines() if re.search(r'"(message|hint)":', line)]
+    reason = "；".join(lines[-2:]) if lines else f"退出码 {proc.returncode}"
     return f"大豆启动后马上退出了：{reason}"
 
 
@@ -1771,6 +1781,56 @@ class Handler(BaseHTTPRequestHandler):
     def is_admin(self) -> bool:
         return bool(self.user) and self.user.get("role") == "admin"
 
+    def proxied(self, method: str) -> bool:
+        """已迁移看板的请求原样转给新后端（cookie 一起带过去，新后端自己再认一次人）。"""
+        if not BOARD_API:
+            return False
+        path = urlparse(self.path).path
+        if not any(path == prefix or path.startswith(prefix + "/") for prefix in BOARD_API["prefixes"]):
+            return False
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = 0
+        body = self.rfile.read(length) if length > 0 else None
+        headers = {key: value for key, value in self.headers.items() if key.lower() not in HOP_HEADERS}
+        headers["X-Forwarded-For"] = self.client_address[0]
+        headers["Connection"] = "close"
+        connection = http.client.HTTPConnection("127.0.0.1", BOARD_API["port"], timeout=60)
+        try:
+            connection.request(method, self.path, body=body, headers=headers)
+            response = connection.getresponse()
+            status, reply_headers, payload = response.status, response.getheaders(), response.read()
+        except OSError:
+            self.send_json({"message": "新看板后端没响应，稍后再试。"}, 502)
+            return True
+        finally:
+            connection.close()
+        self.send_response(status)
+        for key, value in reply_headers:
+            if key.lower() not in HOP_HEADERS:
+                self.send_header(key, value)
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        if method != "HEAD":
+            self.wfile.write(payload)
+        return True
+
+    def only_new_api(self, method: str) -> None:
+        """DELETE/PUT/PATCH 只有新后端用得到。"""
+        if self.gate(method) or self.proxied(method):
+            return
+        self.send_json({"error": "没有这个操作"}, 405)
+
+    def do_DELETE(self) -> None:
+        self.only_new_api("DELETE")
+
+    def do_PUT(self) -> None:
+        self.only_new_api("PUT")
+
+    def do_PATCH(self) -> None:
+        self.only_new_api("PATCH")
+
     def mounted(self, method: str) -> bool:
         """/review、/wish、/bomb 开头的请求交给对应子站的 Handler 处理。"""
         path = urlparse(self.path).path
@@ -1799,7 +1859,7 @@ class Handler(BaseHTTPRequestHandler):
         return False
 
     def do_GET(self) -> None:
-        if self.gate("GET") or self.mounted("GET"):
+        if self.gate("GET") or self.proxied("GET") or self.mounted("GET"):
             return
         path = urlparse(self.path).path
         if path == "/api/me":
@@ -1902,7 +1962,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json({"error": "没有这个页面"}, 404)
 
     def do_POST(self) -> None:
-        if self.gate("POST") or self.mounted("POST"):
+        if self.gate("POST") or self.proxied("POST") or self.mounted("POST"):
             return
         path = urlparse(self.path).path
         origin = self.headers.get("Origin")
@@ -2209,8 +2269,25 @@ def start_bomb_web() -> None:
     print(f"炸线看板 http://{bomb_web.HOST}:{bomb_web.PORT}", flush=True)
 
 
+def start_board_api() -> None:
+    """在后台线程里起新后端（FastAPI，127.0.0.1:8766）。缺依赖或前端没构建就不起，看板继续走旧页面。"""
+    global BOARD_API
+    try:
+        import server.app as board_app
+    except ImportError as error:
+        print(f"新看板后端没起来，缺依赖（{error}）：python -m pip install -r requirements.txt。心愿墙先用旧页面。", flush=True)
+        return
+    if not os.path.exists(board_app.INDEX_HTML):
+        print("新看板前端没构建（web/dist 不存在）：cd web && npm install && npm run build。心愿墙先用旧页面。", flush=True)
+        return
+    board_app.start_in_thread()
+    BOARD_API = {"port": board_app.PORT, "prefixes": board_app.PROXY_PREFIXES}
+    print(f"新看板后端 http://127.0.0.1:{board_app.PORT}（{'、'.join(board_app.SPA_PREFIXES)} 已迁移）", flush=True)
+
+
 def main() -> None:
     apply_models_here()
+    start_board_api()
     server = QuietHTTPServer((HOST, PORT), Handler)
     print(f"大豆后台 http://{HOST}:{PORT}  （复盘 /review/ · 心愿墙 /wish/ · 炸线看板 /bomb/ · 合并确认 /merge/）", flush=True)
     server.serve_forever()

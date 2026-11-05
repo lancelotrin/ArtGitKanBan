@@ -1,0 +1,2 @@
+/* 全局只放最基础的东西；各看板的样式都包在自己的根类名里。 */
+body { margin: 0; font: 14px/1.6 "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }

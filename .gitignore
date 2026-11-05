@@ -42,3 +42,8 @@ MergeReviewPortable/run/
 # 登录
 users.json
 sessions.json
+
+# 新前后端
+.venv/
+web/node_modules/
+web/dist/
