@@ -17,6 +17,12 @@ class ReviewServer(ThreadingHTTPServer):
     request_queue_size = 128
 
 
+
+def login_name(handler) -> str:
+    """挂在大豆后台下时由后台认过人（auth_user），以登录名为准；单独运行时返回空。"""
+    user = getattr(handler, "auth_user", None) or {}
+    return str(user.get("name") or "")[:60]
+
 def database(path):
     conn = sqlite3.connect(path, timeout=15)
     conn.row_factory = sqlite3.Row
@@ -100,7 +106,12 @@ def make_handler(snapshot, db_path):
                       "/style.css": ("style.css", "text/css")}
             if route in assets:
                 name, mime = assets[route]
-                return self.reply(200, (ROOT / name).read_bytes(), mime + "; charset=utf-8")
+                raw = (ROOT / name).read_bytes()
+                login = login_name(self)
+                if route == "/" and login:  # 挂在大豆后台下已登录：姓名直接用飞书名
+                    seed = "<script>try{localStorage.setItem('portable-merge-review-name'," + json.dumps(login) + ")}catch(e){}</script>"
+                    raw = raw.replace(b"<body>", ("<body>" + seed).encode("utf-8"), 1)
+                return self.reply(200, raw, mime + "; charset=utf-8")
             return self.reply(404, {"error": "页面不存在"})
 
         def do_POST(self):
@@ -128,7 +139,7 @@ def make_handler(snapshot, db_path):
                 reviewer, comment = body.get("reviewer", ""), body.get("comment", "")
                 if not isinstance(reviewer, str) or not isinstance(comment, str):
                     raise ValueError("姓名和备注必须是文本")
-                reviewer, comment = reviewer.strip(), comment.strip()
+                reviewer, comment = (login_name(self) or reviewer).strip(), comment.strip()
                 if file_id not in ids or choice not in CHOICES | {"clear"}:
                     raise ValueError("文件或选项无效")
                 if not reviewer or len(reviewer) > 60 or len(comment) > 2000:

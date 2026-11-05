@@ -14,6 +14,8 @@ __pycache__/
 # 敏感信息
 bilibili_cookie.txt
 bot_config.json
+.env
+.env.bak*
 
 # 日志
 *.log
@@ -36,3 +38,7 @@ last_shader.json
 merge_projects.json
 MergeReviewPortable/sessions/
 MergeReviewPortable/run/
+
+# 登录
+users.json
+sessions.json

@@ -359,6 +359,9 @@ class MergeHandler(BaseHTTPRequestHandler):
         self.send_body(json.dumps(data, ensure_ascii=False), code, "application/json; charset=utf-8")
 
     def is_local(self) -> bool:
+        """能不能操作这台机器上的工程。挂在大豆后台下（已登录）时只看是不是管理员，单独运行时看是不是本机访问。"""
+        if hasattr(self, "auth_user"):
+            return bool(self.auth_user) and self.auth_user.get("role") == "admin"
         return self.client_address[0] in LOCAL_CLIENTS
 
     def delegate(self, method: str) -> bool:
@@ -426,7 +429,7 @@ class MergeHandler(BaseHTTPRequestHandler):
                 self.send_json({"error": "没有这个接口"}, 404)
                 return
             if not self.is_local():
-                self.send_json({"error": "只能在大豆所在的机器上操作"}, 403)
+                self.send_json({"error": "只有管理员能操作（单独运行时只能在本机操作）"}, 403)
                 return
             data = json.loads(self.read_raw(65536).decode("utf-8") or "{}")
             if not isinstance(data, dict):

@@ -399,7 +399,12 @@ class WishHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         path = urlparse(self.path).path
         if path in ("/", "/index.html"):
-            self.send_body(PAGE.encode("utf-8"), "text/html; charset=utf-8")
+            page = PAGE
+            name = login_name(self)
+            if name:  # 挂在后台下已登录：名字直接用飞书名，不用再填
+                seed = "<script>try{localStorage.setItem('wishName'," + json.dumps(name) + ")}catch(e){}</script>"
+                page = page.replace("<body>", "<body>" + seed, 1)
+            self.send_body(page.encode("utf-8"), "text/html; charset=utf-8")
         elif path == "/api/wishes":
             self.send_json({"wishes": wish_board.list_wishes(), "settings": wish_board.settings()})
         else:
@@ -426,7 +431,18 @@ class WishHandler(BaseHTTPRequestHandler):
         if not isinstance(payload, dict):
             self.send_json({"ok": False, "message": "提交的内容看不懂。"}, 400)
             return
-        self.send_json(wish_board.apply(str(payload.get("action") or ""), payload, self.client_address[0]))
+        user = getattr(self, "auth_user", None) or {}
+        name = login_name(self)
+        if name:
+            payload["name"] = name  # 以登录身份为准，不信前端填的名字
+        client = user.get("open_id") or self.client_address[0]
+        self.send_json(wish_board.apply(str(payload.get("action") or ""), payload, client, admin=user.get("role") == "admin"))
+
+
+def login_name(handler) -> str:
+    """挂在大豆后台下时，后台已经认过人（auth_user）。单独运行时没有登录，返回空。"""
+    user = getattr(handler, "auth_user", None) or {}
+    return wish_board._clean_name(user.get("name")) or wish_board._clean_name(str(user.get("name") or "").replace(" ", ""))
 
 
 def serve() -> None:

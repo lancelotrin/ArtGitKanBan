@@ -144,8 +144,8 @@ def _allow_create(client: str) -> bool:
     return True
 
 
-def apply(action: str, payload: dict, client: str = "") -> dict:
-    """返回 {ok, message}。所有改动都在锁里读-改-写。"""
+def apply(action: str, payload: dict, client: str = "", admin: bool = False) -> dict:
+    """返回 {ok, message}。所有改动都在锁里读-改-写。admin=True 时可以替别人放弃、标完成、撤回。"""
     name = _clean_name(payload.get("name"))
     if not name:
         return {"ok": False, "message": "先填名字（中文、字母、数字，20 字以内）。"}
@@ -187,17 +187,17 @@ def apply(action: str, payload: dict, client: str = "") -> dict:
             wish.update(status="doing", taker=name, taken_at=now_text())
             message = "接下了，加油。"
         elif action == "drop":
-            if wish.get("status") != "doing" or wish.get("taker") != name:
+            if wish.get("status") != "doing" or (wish.get("taker") != name and not admin):
                 return {"ok": False, "message": "只有接的人能放弃。"}
             wish.update(status="open", taker="", taken_at="")
             message = "已放弃，愿望回到待接。"
         elif action == "done":
-            if wish.get("status") != "doing" or name not in (wish.get("taker"), wish.get("author")):
+            if wish.get("status") != "doing" or (name not in (wish.get("taker"), wish.get("author")) and not admin):
                 return {"ok": False, "message": "只有接的人或许愿的人能标成已实现。"}
             wish.update(status="done", done_at=now_text())
             message = "愿望实现了。"
         elif action == "delete":
-            if wish.get("author") != name or wish.get("status") != "open":
+            if not admin and (wish.get("author") != name or wish.get("status") != "open"):
                 return {"ok": False, "message": "只有许愿的人能撤回，而且要在没人接之前。"}
             data["wishes"] = [item for item in data["wishes"] if item is not wish]
             message = "已撤回。"

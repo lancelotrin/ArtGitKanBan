@@ -17,7 +17,7 @@ try:
 except ImportError:  # 非 Windows
     winreg = None
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlencode, urlparse
 
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 BOT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -171,6 +171,7 @@ PAGE = r"""<!DOCTYPE html>
     <a href="#sites" data-tab="sites"><i class="ico">◫</i><span>网站</span></a>
     <div class="group">其他</div>
     <a href="#settings" data-tab="settings"><i class="ico">⚙</i><span>设置</span></a>
+    <a href="#users" data-tab="users"><i class="ico">☺</i><span>账号</span></a>
   </nav>
   <div class="side-foot">记下的是单聊，以及群里 @ 了大豆的问题。</div>
 </aside>
@@ -181,6 +182,8 @@ PAGE = r"""<!DOCTYPE html>
   <div class="spacer"></div>
   <button id="start" class="primary">启动</button>
   <button id="stop">停止</button>
+  <span id="whoami" class="meta" style="margin:0"></span>
+  <button id="logout">退出</button>
 </div>
 <main>
   <div class="tab" data-tab="overview">
@@ -431,13 +434,22 @@ PAGE = r"""<!DOCTYPE html>
       <table><thead><tr><th>时间</th><th>目录</th><th>身份</th></tr></thead><tbody id="agents"></tbody></table>
     </section>
   </div>
+  <div class="tab" data-tab="users" hidden>
+    <section>
+      <h2>账号</h2>
+      <p class="meta">用飞书登录过的人都在这里。普通用户只能用子站（许愿、+1、合并选边）；管理员还能进后台改设置、管心愿墙、在本机检查工程，并能代别人处理心愿。</p>
+      <div class="table-wrap">
+        <table><thead><tr><th>姓名</th><th>角色</th><th>第一次登录</th><th>最近登录</th><th></th></tr></thead><tbody id="userRows"></tbody></table>
+      </div>
+    </section>
+  </div>
 </main>
 </div>
 </div>
 <div id="toast" class="toast" hidden></div>
 <script>
 const $ = (id) => document.getElementById(id);
-const TAB_TITLES = { overview: "概览", code: "代码", review: "复盘", chat: "对话", sites: "网站", settings: "设置" };
+const TAB_TITLES = { overview: "概览", code: "代码", review: "复盘", chat: "对话", sites: "网站", settings: "设置", users: "账号" };
 const TAB_ALIAS = { "sec-pull": "code", "sec-watch": "code", "sec-bomb": "code", "sec-review": "review", "sec-questions": "chat", "sec-reviews": "chat", "sec-misses": "chat", "sec-wish": "sites", "sec-models": "settings" };
 function showTab() {
   let key = decodeURIComponent(location.hash.slice(1));
@@ -471,6 +483,7 @@ function toast(text, bad) {
 }
 async function api(path, options) {
   const response = await fetch(path, options);
+  if (response.status === 401) { location.href = "/login?next=" + encodeURIComponent(location.pathname + location.hash); throw new Error("请先登录"); }
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || "请求失败");
   return data;
@@ -1061,6 +1074,33 @@ $("wishAllow").addEventListener("change", async () => {
 });
 $("wishSearch").addEventListener("input", paintWish);
 $("wishFilter").addEventListener("change", paintWish);
+let me = null;
+async function loadUsers() {
+  const data = await api("/api/users");
+  $("userRows").innerHTML = data.items.map((u) => {
+    const self = me && u.open_id === me.open_id;
+    const admin = u.role === "admin";
+    return "<tr data-id='" + escAttr(u.open_id) + "'><td>" + esc(u.name) + (self ? " <span class='meta'>（我）</span>" : "") + "</td>"
+      + "<td>" + (admin ? "<b>管理员</b>" : "普通用户") + "</td><td>" + esc(u.first_login) + "</td><td>" + esc(u.last_login) + "</td><td>"
+      + (self ? "" : "<button data-user='" + (admin ? "user" : "admin") + "'>" + (admin ? "取消管理员" : "设为管理员") + "</button> "
+        + "<button data-user='remove'>移除</button>") + "</td></tr>";
+  }).join("") || "<tr><td colspan='5' class='meta'>还没有人登录过。</td></tr>";
+}
+$("userRows").addEventListener("click", async (event) => {
+  const button = event.target.closest("button[data-user]");
+  if (!button) return;
+  const row = button.closest("tr");
+  const name = row.cells[0].textContent;
+  if (button.dataset.user === "remove" && !confirm("移除 " + name + "？对方下次用飞书登录会重新变成普通用户。")) return;
+  button.disabled = true;
+  try {
+    await api("/api/users", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: button.dataset.user, open_id: row.dataset.id }) });
+    toast("已更新。");
+    await loadUsers();
+  } catch (error) { toast(error.message, true); button.disabled = false; }
+});
+$("logout").addEventListener("click", async () => { await fetch("/api/logout", { method: "POST" }); location.href = "/login"; });
+api("/api/me").then((data) => { me = data.user; $("whoami").textContent = me.name + " · 管理员"; loadUsers(); }).catch(() => {});
 loadSites();
 loadModels();
 setInterval(loadModels, 30000);
@@ -1334,11 +1374,25 @@ def start_bot() -> str:
         pass
     out = open(LOG_PATH, "w", encoding="utf-8")
     err = open(ERR_PATH, "w", encoding="utf-8")
-    subprocess.Popen(
+    proc = subprocess.Popen(
         [python, "-u", os.path.join(BOT_DIR, "echo_bot.py")],
         cwd=BOT_DIR, env=env, stdout=out, stderr=err, creationflags=NO_WINDOW,
     )
-    return ""
+    out.close()
+    err.close()
+    # 拉起来不等于活着：缺 lark-cli、缺 key 之类会马上退出，等一会儿再看
+    for _ in range(30):
+        if proc.poll() is not None:
+            break
+        time.sleep(0.1)
+    if proc.poll() is None:
+        return ""
+    try:
+        lines = open(ERR_PATH, encoding="utf-8", errors="replace").read().strip().splitlines()
+    except OSError:
+        lines = []
+    reason = lines[-1] if lines else f"退出码 {proc.returncode}"
+    return f"大豆启动后马上退出了：{reason}"
 
 
 def read_log() -> str:
@@ -1549,6 +1603,69 @@ def rebuild_index() -> None:
     threading.Thread(target=work, name="rebuild-index", daemon=True).start()
 
 
+AUTH_STYLE = """
+  :root { color-scheme: light; --bg:#f4f6fb; --card:#fff; --line:#e6e9f2; --ink:#1b2333; --muted:#6b7386; --brand:#3d5afe; --bad:#c0262d; }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; font: 14px/1.6 "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; background: var(--bg); color: var(--ink); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 8px 30px rgba(20,27,52,.06); }
+  .logo { width: 44px; height: 44px; border-radius: 12px; background: linear-gradient(135deg, #5b74ff, #3d5afe); color: #fff; display: grid; place-items: center; font-weight: 700; font-size: 18px; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid var(--line); background: #fff; color: var(--ink);
+    border-radius: 10px; padding: 8px 16px; font: inherit; cursor: pointer; text-decoration: none; }
+  .btn:hover { border-color: var(--brand); color: var(--brand); }
+  .btn.primary { background: var(--brand); border-color: var(--brand); color: #fff; }
+  .btn.primary:hover { background: #2f4bef; color: #fff; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .err { color: var(--bad); background: #fdecec; border-radius: 10px; padding: 8px 12px; font-size: 13px; }
+"""
+
+
+def html_escape(text) -> str:
+    return (str(text or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            .replace('"', "&quot;").replace("'", "&#39;"))
+
+
+def login_page(next_path: str, error: str = "") -> str:
+    import auth
+    href = "/auth/feishu?" + urlencode({"next": auth.safe_next(next_path)})
+    configured = bool(auth.feishu_config()["app_id"])
+    note = "" if configured else '<p class="err">还没配置飞书应用：在项目根目录的 .env 里填 FEISHU_APP_ID / FEISHU_APP_SECRET（参考 .env.example）。</p>'
+    error_html = f'<p class="err">{html_escape(error)}</p>' if error else ""
+    return f"""<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>登录 · 大豆</title><style>{AUTH_STYLE}
+  .wrap {{ min-height: 100vh; display: grid; place-items: center; padding: 16px; }}
+  .card {{ width: 100%; max-width: 360px; padding: 32px 28px; text-align: center; }}
+  h1 {{ font-size: 18px; margin: 14px 0 4px; }} .logo {{ margin: 0 auto; }}
+  .btn.primary {{ width: 100%; margin-top: 20px; padding: 10px 16px; }}
+</style></head><body><div class="wrap"><div class="card">
+<div class="logo">豆</div><h1>大豆后台</h1><p class="muted">用飞书账号登录，登录后这台浏览器会一直记住你。</p>
+{error_html}{note}<a class="btn primary" href="{html_escape(href)}">用飞书登录</a>
+</div></div></body></html>"""
+
+
+def portal_page(user: dict) -> str:
+    """普通用户看到的首页：子站入口。后台的设置只有管理员能看。"""
+    cards = "".join(
+        f'<a class="site card" href="{html_escape(site["port"])}/"><span class="ico" style="background:{html_escape(site["color"])}">{html_escape(site["icon"])}</span>'
+        f'<span><b>{html_escape(site["name"])}</b><span class="muted">{html_escape(site["desc"])}</span></span></a>'
+        for site in sites_view()["sites"])
+    return f"""<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>大豆</title><style>{AUTH_STYLE}
+  header {{ display: flex; align-items: center; gap: 12px; padding: 16px; max-width: 860px; margin: 0 auto; }}
+  header .logo {{ width: 34px; height: 34px; font-size: 15px; border-radius: 10px; }}
+  header b {{ font-size: 16px; }} .spacer {{ flex: 1; }}
+  main {{ max-width: 860px; margin: 0 auto; padding: 0 16px 40px; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }}
+  .site {{ display: flex; gap: 12px; padding: 16px; color: inherit; text-decoration: none; }}
+  .site:hover {{ border-color: var(--brand); }}
+  .site .ico {{ flex: none; width: 38px; height: 38px; border-radius: 10px; color: #fff; display: grid; place-items: center; font-size: 17px; }}
+  .site b {{ display: block; margin-bottom: 2px; }}
+</style></head><body>
+<header><span class="logo">豆</span><b>大豆</b><span class="spacer"></span>
+<span class="muted">{html_escape(user.get("name"))} · 普通用户</span><button class="btn" id="logout">退出</button></header>
+<main>{cards}</main>
+<script>document.getElementById("logout").onclick = async () => {{ await fetch("/api/logout", {{ method: "POST" }}); location.href = "/login"; }};</script>
+</body></html>"""
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt: str, *args) -> None:
         return
@@ -1571,6 +1688,88 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError:
             return {}
         return data if isinstance(data, dict) else {}
+
+    def send_page(self, html: str, status: int = 200, headers: tuple = ()) -> None:
+        body = html.encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        for key, value in headers:
+            self.send_header(key, value)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def redirect(self, location: str, cookies: tuple = ()) -> None:
+        self.send_response(302)
+        self.send_header("Location", location)
+        self.send_header("Cache-Control", "no-store")
+        for cookie in cookies:
+            self.send_header("Set-Cookie", cookie)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def auth_routes(self, method: str) -> bool:
+        """登录相关的几个地址，不用登录就能访问。"""
+        import auth
+        parsed = urlparse(self.path)
+        query = parse_qs(parsed.query)
+        arg = lambda key: (query.get(key) or [""])[0]
+        host = self.headers.get("Host") or f"127.0.0.1:{PORT}"
+        if method == "GET" and parsed.path == "/login":
+            if self.user:
+                self.redirect(auth.safe_next(arg("next")))
+                return True
+            self.send_page(login_page(arg("next"), arg("error")))
+            return True
+        if method == "GET" and parsed.path == "/auth/feishu":
+            try:
+                url, state = auth.begin_login(host, arg("next"))
+            except auth.AuthError as error:
+                self.send_page(login_page(arg("next"), str(error)))
+                return True
+            self.redirect(url, (auth.cookie_header(auth.STATE_COOKIE, state, auth.STATE_SECONDS),))
+            return True
+        if method == "GET" and parsed.path == "/auth/feishu/callback":
+            clear_state = auth.cookie_header(auth.STATE_COOKIE, "", 0)
+            try:
+                _user, token, next_path = auth.finish_login(
+                    host, arg("code"), arg("state"), auth.read_cookie(self.headers.get("Cookie"), auth.STATE_COOKIE))
+            except auth.AuthError as error:
+                self.send_page(login_page("", str(error)), 400, (("Set-Cookie", clear_state),))
+                return True
+            self.redirect(next_path, (clear_state, auth.cookie_header(auth.COOKIE, token, auth.SESSION_SECONDS)))
+            return True
+        if method == "POST" and parsed.path == "/api/logout":
+            auth.end_session(auth.read_cookie(self.headers.get("Cookie"), auth.COOKIE))
+            body = b'{"ok": true}'
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Set-Cookie", auth.cookie_header(auth.COOKIE, "", 0))
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return True
+        return False
+
+    def gate(self, method: str) -> bool:
+        """先认人：没登录的跳去登录页（接口返回 401）。处理完了返回 True。"""
+        import auth
+        self.user = auth.session_user(auth.read_cookie(self.headers.get("Cookie"), auth.COOKIE))
+        self.auth_user = self.user  # 子站 Handler 换类后靠这个知道是谁
+        if self.auth_routes(method):
+            return True
+        if self.user:
+            return False
+        path = urlparse(self.path).path
+        if method == "GET" and "/api/" not in path:
+            self.redirect("/login?" + urlencode({"next": self.path}))
+        else:
+            self.send_json({"error": "请先登录。", "login": "/login"}, 401)
+        return True
+
+    def is_admin(self) -> bool:
+        return bool(self.user) and self.user.get("role") == "admin"
 
     def mounted(self, method: str) -> bool:
         """/review、/wish、/bomb 开头的请求交给对应子站的 Handler 处理。"""
@@ -1600,9 +1799,24 @@ class Handler(BaseHTTPRequestHandler):
         return False
 
     def do_GET(self) -> None:
-        if self.mounted("GET"):
+        if self.gate("GET") or self.mounted("GET"):
             return
         path = urlparse(self.path).path
+        if path == "/api/me":
+            self.send_json({"user": __import__("auth").public_user(self.user)})
+            return
+        if path == "/api/sites":
+            self.send_json(sites_view())
+            return
+        if not self.is_admin():
+            if path in ("/", "/index.html"):
+                self.send_page(portal_page(self.user))
+            else:
+                self.send_json({"error": "只有管理员能看。"}, 403)
+            return
+        if path == "/api/users":
+            self.send_json({"items": __import__("auth").list_users()})
+            return
         if path in ("/", "/index.html"):
             body = PAGE.encode("utf-8")
             self.send_response(200)
@@ -1618,9 +1832,6 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/bomb":
             import echo_bot
             self.send_json(echo_bot.bomb_view())
-            return
-        if path == "/api/sites":
-            self.send_json(sites_view())
             return
         if path == "/api/wish":
             import wish_board
@@ -1691,11 +1902,33 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json({"error": "没有这个页面"}, 404)
 
     def do_POST(self) -> None:
-        if self.mounted("POST"):
+        if self.gate("POST") or self.mounted("POST"):
             return
         path = urlparse(self.path).path
+        origin = self.headers.get("Origin")
+        if origin and urlparse(origin).netloc != self.headers.get("Host"):
+            self.send_json({"error": "不接受跨站提交"}, 403)
+            return
+        if not self.is_admin():
+            self.send_json({"error": "只有管理员能改。"}, 403)
+            return
         data = self.read_body()
         try:
+            if path == "/api/users":
+                import auth
+                action = str(data.get("action") or "")
+                key = str(data.get("open_id") or "")
+                try:
+                    if action in auth.ROLES:
+                        auth.set_role(key, action, by=self.user["open_id"])
+                    elif action == "remove":
+                        auth.remove_user(key, by=self.user["open_id"])
+                    else:
+                        raise ValueError("不认识的操作。")
+                except auth.AuthError as error:
+                    raise ValueError(str(error))
+                self.send_json({"ok": True, "items": auth.list_users()})
+                return
             if path == "/api/start":
                 message = start_bot()
                 if message:
