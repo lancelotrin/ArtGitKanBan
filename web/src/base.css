@@ -1,9 +1,28 @@
 /* 全局只放最基础的东西；各页面的样式都包在自己的根类名里（.wish-page、.admin-page …）。 */
 body { margin: 0; font: 14px/1.6 "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
-.wish-page, .bomb-page, .review-page, .merge-page, .admin-page, .auth-page { min-height: 100vh; }
+.wish-page, .bomb-page, .review-page, .merge-page, .admin-page, .auth-page, .help-page { min-height: 100vh; }
 /* 除心愿墙外各页面共用的提示条 */
 .app-toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(16px); background: #1b2333; color: #fff;
   padding: 10px 16px; border-radius: 10px; z-index: 50; box-shadow: 0 8px 24px rgba(0,0,0,.18); opacity: 0; pointer-events: none;
   transition: opacity .2s, transform .2s; max-width: min(640px, calc(100vw - 32px)); }
 .app-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 .app-toast.bad { background: #c0262d; }
+
+/* 顶部导航条（components/AppNav.tsx）：所有页面共用，站内切换。高度记在 --app-nav-h，整屏页面（AI 聊天）要减掉它。 */
+:root { --app-nav-h: 40px; }
+.app-nav { position: sticky; top: 0; z-index: 40; height: var(--app-nav-h); display: flex; align-items: center; gap: 14px; padding: 0 16px;
+  background: #141b34; color: #cdd3ea; font-size: 13px; box-shadow: 0 1px 0 rgba(255,255,255,.06); }
+.app-nav a { color: inherit; text-decoration: none; }
+.app-nav-brand { display: flex; align-items: center; gap: 8px; color: #fff !important; font-weight: 650; flex: none; }
+.app-nav-brand span { width: 24px; height: 24px; border-radius: 7px; background: linear-gradient(135deg,#5b74ff,#3d5afe); display: grid; place-items: center; font-size: 12px; }
+.app-nav-links { display: flex; gap: 2px; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.app-nav-links::-webkit-scrollbar { display: none; }
+.app-nav-links a { padding: 5px 10px; border-radius: 8px; white-space: nowrap; display: flex; align-items: center; gap: 5px; }
+.app-nav-links a i { font-style: normal; }
+.app-nav-links a:hover { background: rgba(255,255,255,.07); color: #fff; }
+.app-nav-links a.active { background: rgba(91,116,255,.28); color: #fff; }
+.app-nav-me { display: flex; align-items: center; gap: 10px; flex: none; color: #8f98bd; }
+.app-nav-dept { margin-left: 6px; padding: 1px 7px; border-radius: 6px; background: rgba(255,255,255,.08); color: #aab2d4; font-size: 12px; }
+.app-nav-me button { border: 1px solid rgba(255,255,255,.18); background: none; color: #cdd3ea; border-radius: 7px; padding: 2px 10px; font: inherit; cursor: pointer; }
+.app-nav-me button:hover { color: #fff; border-color: rgba(255,255,255,.4); }
+@media (max-width: 640px) { .app-nav-me { display: none; } .app-nav-brand { display: none; } }

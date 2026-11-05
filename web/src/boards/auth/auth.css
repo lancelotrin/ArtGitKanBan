@@ -1,4 +1,4 @@
-/* auth 由旧页面样式加上 .auth-page 前缀生成，避免和别的页面串样式。 */
+/* auth 页面样式：全部挂在 .auth-page 下，避免和别的页面串样式。 */
 .auth-page { color-scheme: light; --bg:#f4f6fb; --card:#fff; --line:#e6e9f2; --ink:#1b2333; --muted:#6b7386; --brand:#3d5afe; --bad:#c0262d; }
 .auth-page, .auth-page * { box-sizing: border-box; }
 .auth-page { margin: 0; min-height: 100vh; font: 14px/1.6 "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; background: var(--bg); color: var(--ink); }

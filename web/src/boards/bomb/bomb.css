@@ -1,4 +1,4 @@
-/* bomb 由旧页面样式加上 .bomb-page 前缀生成，避免和别的页面串样式。 */
+/* bomb 页面样式：全部挂在 .bomb-page 下，避免和别的页面串样式。 */
 .bomb-page { --bg:#f6f4f2; --card:#fff; --line:#ece6e1; --text:#231c18; --sub:#857a72; --brand:#e8590c; --bad:#e03131; --bad-soft:#fff0f0; --warn:#e67700; --warn-soft:#fff6e6; --ok:#2b8a3e; --ok-soft:#ebf8ee; --force:#7048e8; --force-soft:#f1edff; }
 .bomb-page, .bomb-page * { box-sizing:border-box; }
 .bomb-page { margin:0; color:var(--text); font:14px/1.6 "Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; background:var(--bg); min-height:100vh; }

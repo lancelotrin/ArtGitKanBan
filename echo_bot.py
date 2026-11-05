@@ -1,7 +1,7 @@
 """大豆：飞书机器人，被 @ 或单聊时用智谱 GLM 按飞书文档、本地工程文档与代码回答问题；支持识图。
 
 凭证：收发消息用 lark-cli 的 bot 身份；搜/读飞书文档只支持 user 身份，范围为该登录用户可见的文档，过期需重新 `lark-cli auth login`。
-智谱 GLM：环境变量 LLM_API_KEY、LLM_MODEL（默认 glm-4-flash）、LLM_VISION_MODEL（默认 glm-4v-flash），可选 LLM_BASE_URL；未配置时退化为只搜文档。
+回答默认用本机 Codex CLI（AI_PROVIDER=codex，见 codex_cli.py）；AI_PROVIDER=glm 时用智谱 GLM：环境变量 LLM_API_KEY、LLM_MODEL（默认 glm-4-flash）、LLM_VISION_MODEL（默认 glm-4v-flash），可选 LLM_BASE_URL；未配置时退化为只搜文档。
 直接 `python echo_bot.py`，Ctrl+C 退出。
 """
 import asyncio
@@ -28,6 +28,7 @@ from pathlib import Path
 
 import bomb
 import bomb_board
+import codex_cli
 import local_edit
 import model_stats
 import stickers
@@ -178,39 +179,17 @@ GIT_BRANCH = "main"
 GIT_BRANCHES = ("main", "CBT2_bugfix")
 GIT_REF = f"{GIT_REMOTE}/{GIT_BRANCH}"
 LAST_GIT_BRANCH = {}
-CONFIG_PATH = os.path.join(BOT_DIR, "bot_config.json")
 PREVIEWING = False
 
 
 def load_bot_config() -> dict:
-    """后台和机器人共用。项目目录、允许查询的 Git 分支。"""
-    config = {"project_root": DEFAULT_PROJECT_ROOT, "git_branches": ["main", "CBT2_bugfix"]}
-    try:
-        with open(CONFIG_PATH, encoding="utf-8") as config_file:
-            saved = json.load(config_file)
-    except (OSError, ValueError):
-        return config
-    if not isinstance(saved, dict):
-        return config
-    root = saved.get("project_root")
-    if isinstance(root, str) and root.strip():
-        config["project_root"] = root.strip()
-    branches = saved.get("git_branches")
-    if isinstance(branches, list):
-        clean = []
-        for branch in branches:
-            name = str(branch).strip()
-            if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.\-]{0,60}", name) and name not in clean:
-                clean.append(name)
-        if "main" not in clean:
-            clean.insert(0, "main")
-        if clean:
-            config["git_branches"] = clean[:8]
-    return config
+    """后台和机器人共用。项目目录、允许查询的 Git 分支，都在 .env（PROJECT_ROOT、GIT_BRANCHES）。"""
+    import settings
+    return {"project_root": settings.project_root(), "git_branches": settings.git_branches()}
 
 
 def apply_bot_config() -> dict:
-    """按 bot_config.json 改工程目录和允许的分支。改完要重启进程才对飞书生效。"""
+    """按 .env 改工程目录和允许的分支。改完要重启进程才对飞书生效。"""
     global PROJECT_ROOT, GIT_BRANCHES, GIT_REF
     config = load_bot_config()
     root = os.path.abspath(config["project_root"])
@@ -448,7 +427,9 @@ WEB_OFFLINE_PROMPT = """你是「大豆」，游戏项目组的助手。这次�
 
 
 def get_env(name: str) -> str:
-    value = os.environ.get(name, "")
+    """系统环境变量 → 项目根目录的 .env → （Windows）用户环境变量。"""
+    from auth import env_value, read_env_file
+    value = env_value(name, read_env_file())
     if value or sys.platform != "win32":
         return value
     try:
@@ -475,7 +456,10 @@ LLM_API_KEY = get_env("LLM_API_KEY") or get_env("GLM_API_KEY") or get_env("ARK_A
 LLM_MODEL = get_env("LLM_MODEL") or get_env("GLM_MODEL") or get_env("ARK_MODEL") or DEFAULT_LLM_MODEL
 LLM_VISION_MODEL = get_env("LLM_VISION_MODEL") or DEFAULT_LLM_VISION_MODEL
 LLM_BASE_URL = get_env("LLM_BASE_URL") or get_env("GLM_BASE_URL") or get_env("ARK_BASE_URL") or DEFAULT_LLM_BASE_URL
-LLM_ENABLED = bool(LLM_API_KEY)
+# 回答用哪个 AI：codex（本机 Codex CLI，默认）或 glm（智谱，要 LLM_API_KEY）。Codex 没装时自动退回智谱。
+AI_PROVIDER = (get_env("AI_PROVIDER") or "codex").strip().lower()
+USE_CODEX = AI_PROVIDER == "codex" and codex_cli.available()
+LLM_ENABLED = USE_CODEX or bool(LLM_API_KEY)
 print_lock = threading.Lock()
 
 
@@ -1769,7 +1753,31 @@ def call_chat_once(model: str, messages: list, think: bool = False, max_tokens: 
     return content
 
 
+def answer_model() -> str:
+    return codex_cli.label() if USE_CODEX else LLM_MODEL
+
+
+def call_codex(messages: list, images: list = ()) -> str:
+    name = codex_cli.label()
+    try:
+        answer, usage = codex_cli.ask(messages, images)
+    except (codex_cli.CodexError, codex_cli.CodexTimeout, OSError) as error:
+        model_stats.note(name, False, redact(f"{type(error).__name__}: {error}"))
+        log(f"[codex] {type(error).__name__}: {str(error)[:160]}")
+        raise
+    model_stats.note(name, True, prompt_tokens=int(usage.get("input_tokens") or 0),
+                     completion_tokens=int(usage.get("output_tokens") or 0))
+    return answer
+
+
 def call_chat(model: str, messages: list, fallbacks: tuple = (), think: bool = False, max_tokens: int = 0) -> str:
+    if USE_CODEX:
+        try:
+            return call_codex(messages)
+        except (codex_cli.CodexError, codex_cli.CodexTimeout, OSError):
+            if not LLM_API_KEY:
+                raise
+            log("[codex] 退回智谱")
     last_error = None
     for candidate in (model,) + tuple(item for item in fallbacks if item != model):
         try:
@@ -1816,7 +1824,7 @@ def answer_token_status(text: str = "") -> str:
     today = stats.get("today") or ""
     lines = [
         "查不到智谱账号还剩多少 token / 额度（开放接口没有余额）。",
-        f"当前模型：聊天 `{LLM_MODEL}`，看图 `{LLM_VISION_MODEL}`。",
+        f"当前模型：聊天 `{answer_model()}`，看图 `{answer_model() if USE_CODEX else LLM_VISION_MODEL}`。",
         f"今天（{today}）大豆这边记下的调用：",
     ]
     models = stats.get("models") or {}
@@ -1853,12 +1861,16 @@ def answer_token_status(text: str = "") -> str:
 def publish_model_config() -> None:
     """把这个进程实际在用的模型写给后台看。"""
     llm = LLM_ENABLED
+    provider = "本机 Codex" if USE_CODEX else "智谱"
+    off_reason = "Codex 没找到，也没有配 LLM_API_KEY，只搜文档" if AI_PROVIDER == "codex" else "没有配 LLM_API_KEY，只搜文档"
+    chat_fallbacks = ([LLM_MODEL] if LLM_API_KEY else []) if USE_CODEX else \
+        [name for name in LLM_FALLBACK_MODELS if name != LLM_MODEL]
     uses = [
-        {"use": "聊天回答、周报、复盘摘要", "model": LLM_MODEL if llm else "",
-         "fallbacks": [name for name in LLM_FALLBACK_MODELS if name != LLM_MODEL] if llm else [],
-         "provider": "智谱", "on": llm, "off_reason": "" if llm else "没有配 LLM_API_KEY，只搜文档"},
-        {"use": "看图、看截图", "model": LLM_VISION_MODEL if llm else "", "fallbacks": [], "provider": "智谱", "on": llm,
-         "off_reason": "" if llm else "没有配 LLM_API_KEY"},
+        {"use": "聊天回答、周报、复盘摘要", "model": answer_model() if llm else "",
+         "fallbacks": chat_fallbacks if llm else [], "provider": provider, "on": llm,
+         "off_reason": "" if llm else off_reason},
+        {"use": "看图、看截图", "model": (answer_model() if USE_CODEX else LLM_VISION_MODEL) if llm else "",
+         "fallbacks": [], "provider": provider, "on": llm, "off_reason": "" if llm else off_reason},
         {"use": "答完后评价（对 / 错 / 纠正）", "model": COACH_MODEL, "fallbacks": [], "provider": "Cursor",
          "on": bool(get_env("CURSOR_API_KEY")), "off_reason": "" if get_env("CURSOR_API_KEY") else "没有 CURSOR_API_KEY，不评价"},
     ]
@@ -1890,6 +1902,8 @@ def call_llm_vision(system: str, user: str, image_paths: list) -> str:
     if taught:
         system += f"\n\n【调教，必须遵守】{taught}"
     messages = [{"role": "system", "content": system}, {"role": "user", "content": content}]
+    if USE_CODEX:
+        return call_codex([{"role": "system", "content": system}, {"role": "user", "content": user}], image_paths)
     last_error = None
     for attempt in range(2):
         try:
@@ -3206,7 +3220,7 @@ REVIEW_SUBS_PATH = os.path.join(BOT_DIR, "review_subs.json")
 REVIEW_STATE_PATH = os.path.join(BOT_DIR, "review_state.json")
 REVIEW_DIR = os.path.join(BOT_DIR, "reviews")
 REVIEW_KEEP_DAYS = 90
-REVIEW_WEB_PORT = int(os.environ.get("CONSOLE_PORT", "8765"))  # 复盘挂在大豆后台 /review 下
+REVIEW_WEB_PORT = int(os.environ.get("CONSOLE_PORT", "80"))  # 复盘挂在大豆后台 /review 下
 REVIEW_POLL_SEC = 60
 REVIEW_AUTHOR_PATTERN = re.compile(r"^[A-Za-z0-9\u4e00-\u9fff][A-Za-z0-9_.\-\u4e00-\u9fff ]{0,39}$")
 REVIEW_DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -3254,6 +3268,68 @@ def git_author_exists(author: str) -> bool:
     return any(name.casefold() == lowered for name in git_author_names())
 
 
+def bot_api_get(path: str, params: dict) -> dict:
+    """以机器人身份 GET 飞书接口，返回 data；失败抛 RuntimeError。"""
+    payload = json.loads(run_cli(["api", "GET", path, "--as", "bot", "--params", json.dumps(params)]))
+    if not payload.get("ok", payload.get("code") == 0):
+        raise RuntimeError(str(payload.get("error") or payload.get("msg") or payload)[:300])
+    return payload.get("data") or {}
+
+
+def bot_api_pages(path: str, params: dict) -> list:
+    items = []
+    page_token = ""
+    for _ in range(50):
+        data = bot_api_get(path, {**params, "page_size": 100, **({"page_token": page_token} if page_token else {})})
+        items.extend(data.get("items") or [])
+        page_token = data.get("page_token") or ""
+        if not data.get("has_more") or not page_token:
+            break
+    return items
+
+
+_bot_members_cache = {"at": 0.0, "people": {}}
+_bot_members_lock = threading.Lock()
+
+
+def bot_known_people(max_age: float = 600) -> dict:
+    """机器人所在各群的成员：{姓名: {open_id, ...}}。open_id 是本应用视角的，能直接私聊。"""
+    with _bot_members_lock:
+        if time.time() - _bot_members_cache["at"] < max_age and _bot_members_cache["people"]:
+            return _bot_members_cache["people"]
+        people = {}
+        for chat in bot_api_pages("/open-apis/im/v1/chats", {}):
+            chat_id = str(chat.get("chat_id") or "")
+            if not chat_id.startswith("oc_"):
+                continue
+            try:
+                members = bot_api_pages(f"/open-apis/im/v1/chats/{chat_id}/members", {"member_id_type": "open_id"})
+            except (RuntimeError, ValueError, subprocess.TimeoutExpired) as error:
+                log(f"[people] members {chat_id} failed {error}")
+                continue
+            for member in members:
+                member_name = str(member.get("name") or "").strip()
+                member_id = str(member.get("member_id") or "")
+                if member_name and member_id.startswith("ou_"):
+                    people.setdefault(member_name, set()).add(member_id)
+        _bot_members_cache.update(at=time.time(), people=people)
+        return people
+
+
+def find_open_id_by_name(name: str) -> tuple:
+    """按飞书姓名找 open_id。返回 (open_id, 说明)；找不到或重名时 open_id 为空。"""
+    try:
+        ids = bot_known_people().get(name.strip()) or set()
+    except (RuntimeError, ValueError, subprocess.TimeoutExpired) as error:
+        log(f"[people] lookup {name} failed {error}")
+        return "", "查飞书成员失败，先只出网页。"
+    if len(ids) == 1:
+        return next(iter(ids)), ""
+    if len(ids) > 1:
+        return "", f"大豆所在的群里有 {len(ids)} 个「{name}」，重名了，先只出网页。"
+    return "", f"大豆所在的群里没找到「{name}」（姓名要和飞书里一致，且要和大豆同在一个群），先只出网页。"
+
+
 def control_review_sub(action: str, name: str = "", git_author: str = "", open_id: str = "") -> dict:
     """后台登记名单。返回 {"ok", "message", "subs"}。"""
     name = (name or "").strip()[:20]
@@ -3277,12 +3353,37 @@ def control_review_sub(action: str, name: str = "", git_author: str = "", open_i
         hint = [item for item in authors if git_author.casefold() in item.casefold() or item.casefold() in git_author.casefold()][:5]
         tip = (" 相近的有：" + "、".join(hint) + "。") if hint else " 打开终端跑 git shortlog -sn origin/main 能看到作者名。"
         return {"ok": False, "message": f"main 和 CBT2_bugfix 上找不到作者 {git_author} 的提交。{tip}", "subs": load_review_subs()}
+    note = "，会私聊。"
+    if not open_id:
+        open_id, why = find_open_id_by_name(name)
+        note = "，已按姓名找到飞书账号，会私聊。" if open_id else "。" + why
     with _review_lock:
         subs = load_review_subs()
         kept = [item for item in subs if item.get("git_author") != matched]
         kept.append({"name": name, "git_author": matched, "open_id": open_id})
         save_review_json(REVIEW_SUBS_PATH, {"subs": kept})
-        return {"ok": True, "message": f"已登记 {name}（{matched}）。", "subs": kept}
+        return {"ok": True, "message": f"已登记 {name}（{matched}）{note}", "subs": kept}
+
+
+def fill_review_open_ids(subs: list) -> list:
+    """名单里没 open_id 的，按姓名再找一次（人后来进了群就能补上），找到就写回。"""
+    missing = [item for item in subs if not item.get("open_id") and item.get("name")]
+    if not missing:
+        return subs
+    found = {}
+    for item in missing:
+        open_id, _why = find_open_id_by_name(item["name"])
+        if open_id:
+            found[item["git_author"]] = open_id
+    if found:
+        with _review_lock:
+            fresh = load_review_subs()
+            for item in fresh:
+                if not item.get("open_id") and item.get("git_author") in found:
+                    item["open_id"] = found[item["git_author"]]
+            save_review_json(REVIEW_SUBS_PATH, {"subs": fresh})
+        log(f"[review] open_id filled {', '.join(found)}")
+    return [{**item, "open_id": item.get("open_id") or found.get(item.get("git_author"), "")} for item in subs]
 
 
 def review_day_bounds(day: datetime.date) -> tuple:
@@ -3333,7 +3434,8 @@ def review_web_base() -> str:
         probe.close()
     except OSError:
         host = "127.0.0.1"
-    return f"http://{host}:{REVIEW_WEB_PORT}/review"
+    port = "" if REVIEW_WEB_PORT == 80 else f":{REVIEW_WEB_PORT}"
+    return f"http://{host}{port}/review"
 
 
 def review_brief(report: str, commit_count: int, outgoing: str, incoming: str) -> str:
@@ -3542,6 +3644,8 @@ def generate_daily_reviews(day: datetime.date, notify: bool = True) -> str:
     subs = load_review_subs()
     if not subs:
         return "名单是空的，没跑。"
+    if notify:
+        subs = fill_review_open_ids(subs)
     git_root = get_git_root()
     for branch in GIT_BRANCHES:
         fetch_origin_branch(git_root, branch)
@@ -7786,8 +7890,8 @@ def main() -> None:
     local_index = load_local_index()
     DIR_INDEX.extend(load_dir_index())
     log(f"[start] dir_index={len(DIR_INDEX)} notes={len(load_notes())}")
-    log(f"[start] llm={'on' if LLM_ENABLED else 'off'} model={LLM_MODEL if LLM_ENABLED else '-'} "
-        f"vision={LLM_VISION_MODEL if LLM_ENABLED else '-'} local_files={len(local_index)}")
+    log(f"[start] llm={'on' if LLM_ENABLED else 'off'} model={answer_model() if LLM_ENABLED else '-'} "
+        f"vision={(answer_model() if USE_CODEX else LLM_VISION_MODEL) if LLM_ENABLED else '-'} local_files={len(local_index)}")
     publish_model_config()
     args = LARK_CLI + ["event", "+subscribe", "--as", "bot", "--event-types", EVENT_TYPE]
     process = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8",

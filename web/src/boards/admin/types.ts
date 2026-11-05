@@ -63,12 +63,9 @@ export interface Models {
   uses: { use: string; on: boolean; off_reason?: string; model: string; provider: string; fallbacks?: string[] }[];
   started_at?: string;
   provider?: string;
-  history?: { at: string; chat?: [string, string]; vision?: [string, string] }[];
-  choices: { chat: string[]; vision: string[] };
   current: { chat: string; vision: string };
   defaults: { chat: string; vision: string };
-  ok?: boolean;
-  message?: string;
+  env?: { chat: string; vision: string };
 }
 
 export interface AdminWish {
@@ -85,5 +82,5 @@ export interface WishAdmin {
   message?: string;
 }
 
-export interface Account { open_id: string; name: string; role: string; first_login: string; last_login: string }
+export interface Account { open_id: string; name: string; department?: string; role: string; first_login: string; last_login: string }
 export interface Bilibili { set?: boolean; login?: boolean; uname?: string; message?: string }

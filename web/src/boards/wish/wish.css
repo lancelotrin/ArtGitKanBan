@@ -1,4 +1,4 @@
-/* 心愿墙样式：从旧 wish_web.py 原样搬过来，整体包在 .wish-page 里，免得和别的看板串样式。 */
+/* 心愿墙样式：整体包在 .wish-page 里，免得和别的看板串样式。 */
 .wish-page {
   & { --bg:#f5f3ff; --card:#fff; --line:#ebe7f7; --text:#1f1b2e; --sub:#7a7490; --brand:#7c5cff; --brand-soft:#f0ebff;
     --hot:#ff6b5b; --hot-soft:#fff0ee; --doing:#f08c1a; --doing-soft:#fff4e5; --done:#1f9d6b; --done-soft:#e6f7ef; --heart:#ff4d79; }
@@ -38,7 +38,7 @@
   .garrow.l { left:-14px; } .garrow.r { right:-14px; }
   .gempty { color:#fff; opacity:.9; background:rgba(255,255,255,.16); border:1px dashed rgba(255,255,255,.5); border-radius:16px; padding:22px; text-align:center; }
   /* toolbar */
-  .bar { position:sticky; top:0; z-index:5; margin:22px 0 16px; background:rgba(255,255,255,.86); backdrop-filter:blur(10px);
+  .bar { position:sticky; top:var(--app-nav-h); z-index:5; margin:22px 0 16px; background:rgba(255,255,255,.86); backdrop-filter:blur(10px);
     border:1px solid var(--line); border-radius:18px; padding:10px 12px; display:flex; flex-wrap:wrap; align-items:center; gap:10px; box-shadow:0 8px 24px rgba(60,40,140,.06); }
   .seg { display:flex; background:#f3f1fa; border-radius:12px; padding:3px; }
   .seg button { border:none; background:none; color:var(--sub); padding:5px 12px; border-radius:9px; font-size:13px; }

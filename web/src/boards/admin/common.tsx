@@ -4,7 +4,7 @@ import { api } from "../../api/client";
 import { useToast } from "../../components/Toast";
 
 // 后台接口都在 /api/v1/admin/<名字>，逻辑在 console.admin_get / admin_post。
-// 有些写接口失败时仍回 200 + {ok:false, message}（和旧页面一样），这里统一当成出错。
+// 有些写接口失败时仍回 200 + {ok:false, message}，这里统一当成出错。
 export interface Result { ok?: boolean; message?: string }
 
 export function useAdmin<T>(name: string, refetchInterval: number | false = 30_000) {
@@ -22,7 +22,7 @@ export function useRefreshAdmin() {
   return () => client.invalidateQueries({ queryKey: ["admin"] });
 }
 
-/** 旧页面的 press()：按下后显示“处理中…”，做完刷新后台数据，成功弹 done，失败弹错误。 */
+/** 按下后显示“处理中…”，做完刷新后台数据，成功弹 done，失败弹错误。 */
 export function ActionButton({ label, done, run, className, disabled, style }: {
   label: string; done: string; run: () => Promise<unknown>; className?: string; disabled?: boolean; style?: CSSProperties;
 }) {

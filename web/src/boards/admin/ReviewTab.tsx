@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router";
 import { ActionButton, adminPost, useAdmin, useSynced } from "./common";
 import type { ReviewAdmin } from "./types";
 
@@ -11,7 +12,6 @@ export default function ReviewTab() {
   const { data } = useAdmin<ReviewAdmin>("review");
   const [name, setName] = useState("");
   const [author, setAuthor] = useState("");
-  const [openId, setOpenId] = useState("");
   const [date, setDate] = useState(yesterday);
   const [message, setMessage] = useState<{ text: string; bad?: boolean }>({ text: "" });
   const [groups, setGroups, resetGroups] = useSynced(data?.groups?.join("\n"), "");
@@ -30,9 +30,9 @@ export default function ReviewTab() {
   };
   const add = withMessage(setMessage, async () => {
     if (!name.trim() || !author.trim()) throw new Error("姓名和 git 作者都要填。");
-    setMessage({ text: "正在核对 git 作者…" });
-    const result = await adminPost<ReviewAdmin>("review", { action: "add", name: name.trim(), git_author: author.trim(), open_id: openId });
-    setName(""); setAuthor(""); setOpenId("");
+    setMessage({ text: "正在核对 git 作者、按姓名找飞书账号…" });
+    const result = await adminPost<ReviewAdmin>("review", { action: "add", name: name.trim(), git_author: author.trim() });
+    setName(""); setAuthor("");
     return result;
   });
 
@@ -42,8 +42,8 @@ export default function ReviewTab() {
       <h2>自检复盘</h2>
       <p className="meta">
         每天 0 点复盘名单里每个人前一天在 main 和 CBT2_bugfix 上的提交，结果放在内网网页{" "}
-        <a href={data?.web || "/review/"} target="_blank" rel="noopener">{data?.web || "/review/"}</a>
-        （只读，打开就能看所有人）。填了 open_id 的会收到私聊摘要，没填的只出网页。git 作者名要和提交里的一致。
+        <Link to="/review/">{data?.web || "/review/"}</Link>
+        （只读，打开就能看所有人）。姓名填飞书里的名字，大豆会在它所在的群里按姓名找到这个人并私聊摘要；找不到的只出网页，之后进了群会自动补上。git 作者名要和提交里的一致。
       </p>
       <div>
         {!data ? "正在读取…" : (
@@ -66,9 +66,8 @@ export default function ReviewTab() {
       <div className="sub">
         <label>登记新的人</label>
         <form className="row" onSubmit={(e) => e.preventDefault()}>
-          <input type="text" placeholder="姓名，如 朱辉" style={{ maxWidth: 140 }} value={name} onChange={(e) => setName(e.target.value)} />
+          <input type="text" placeholder="飞书姓名，如 朱辉" style={{ maxWidth: 140 }} value={name} onChange={(e) => setName(e.target.value)} />
           <input type="text" placeholder="git 作者，如 zhuhui" style={{ maxWidth: 180 }} value={author} onChange={(e) => setAuthor(e.target.value)} />
-          <input type="text" placeholder="open_id（可留空）" style={{ maxWidth: 260 }} value={openId} onChange={(e) => setOpenId(e.target.value)} />
           <ActionButton className="primary" label="登记" done="已登记" run={add} />
         </form>
         <label>补跑某一天</label>

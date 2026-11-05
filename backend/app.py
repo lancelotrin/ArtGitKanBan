@@ -1,6 +1,6 @@
 """FastAPI 入口：/api/v1/* 是 JSON 接口；页面路径都返回 React 构建出的 index.html。
 
-console.py 仍是对外的门（8765，飞书登录回调和退出在那里），它按下面的路由表把请求转发到这里（只听 127.0.0.1）。
+console.py 仍是对外的门（80，飞书登录回调和退出在那里），它按下面的路由表把请求转发到这里（只听 127.0.0.1）。
 单独调试：.venv/bin/python -m backend
 """
 import os
@@ -19,7 +19,7 @@ if "console" not in sys.modules and "__main__" in sys.modules and \
         getattr(sys.modules["__main__"], "__file__", "").endswith("console.py"):
     sys.modules["console"] = sys.modules["__main__"]  # 被 console.py 带起来时共用同一份状态
 
-from backend.routers import admin, bomb, core, merge, review, wish  # noqa: E402
+from backend.routers import admin, bomb, chat, core, help, merge, review, wish  # noqa: E402
 
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("BOARD_API_PORT", "8766"))
@@ -27,7 +27,7 @@ DIST_DIR = os.path.join(ROOT_DIR, "web", "dist")
 INDEX_HTML = os.path.join(DIST_DIR, "index.html")
 
 # 路由规则（console.board_route 解析）：以 = 开头是整条路径；以 / 结尾是前缀；其它是前缀且含自身。
-SPA_ROUTES = ("=/", "=/index.html", "=/login", "/wish", "/bomb", "/review", "/merge")
+SPA_ROUTES = ("=/", "=/index.html", "=/login", "/wish", "/bomb", "/review", "/merge", "/chat", "/help")
 PUBLIC_PAGES = ("=/login",)
 SPA_PREFIXES = tuple(rule for rule in SPA_ROUTES if not rule.startswith("="))
 PROXY_ROUTES = SPA_ROUTES + ("/api/v1", "/static")
@@ -55,7 +55,7 @@ async def validation_error(_request: Request, error: RequestValidationError) -> 
                         status_code=422)
 
 
-for _router in (core.router, wish.router, bomb.router, review.router, merge.router, admin.router):
+for _router in (core.router, wish.router, bomb.router, review.router, merge.router, chat.router, help.router, admin.router):
     app.include_router(_router, prefix="/api/v1")
 
 

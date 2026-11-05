@@ -1,13 +1,13 @@
-"""自检复盘 API（只读）。读 reviews/ 下的 json；规则和渲染沿用 review_web.py 里的函数。
+"""自检复盘 API（只读）。读 reviews/ 下的 json；规则和渲染在 review_board.py。
 
-*_html 字段由 review_web 的渲染函数生成：先整段转义，只放 <b>/<code>/链接等几个固定标签，前端可以直接插入。
+*_html 字段由 review_board 的渲染函数生成：先整段转义，只放 <b>/<code>/链接等几个固定标签，前端可以直接插入。
 同时给出 *_md 原文，方便 agent 直接读。
 """
 import zlib
 
 from fastapi import APIRouter, Depends, HTTPException
 
-import review_web as rw
+import review_board as rw
 from backend.deps import current_user
 
 router = APIRouter(prefix="/reviews", tags=["自检复盘"])

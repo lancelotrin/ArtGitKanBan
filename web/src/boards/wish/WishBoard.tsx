@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { ToastProvider } from "../../components/Toast";
 import { when } from "../../lib/format";
 import { useWishAction, useWishes, type Wish, type WishStatus } from "./api";
@@ -139,7 +139,7 @@ function Hero({ me, counts, allow, onNew }: { me: string; counts: Record<Filter,
       <span className="star" style={{ left: "42%", top: "14%", fontSize: 10, animationDelay: "1.1s" }}>✦</span>
       <span className="star" style={{ left: "58%", top: "62%", fontSize: 12, animationDelay: ".5s" }}>✦</span>
       <span className="star" style={{ left: "88%", top: "18%", fontSize: 16, animationDelay: "2s" }}>✦</span>
-      {me && <div className="me">我是 <b>{me}</b> · <a href="/">大豆后台</a></div>}
+      {me && <div className="me">我是 <b>{me}</b> · <Link to="/">大豆后台</Link></div>}
       <div className="wrap">
         <div>
           <div className="brand"><i>豆</i>大豆</div>

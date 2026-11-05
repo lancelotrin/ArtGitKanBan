@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { ActionButton, adminPost, shortTime, useAdmin } from "./common";
 import type { Bilibili, Items, Models, ModelStat, Person, Status } from "./types";
 
@@ -15,52 +14,25 @@ function cell(stat: ModelStat = {}) {
 
 function ModelsSection() {
   const { data } = useAdmin<Models>("models");
-  const client = useQueryClient();
-  const [chat, setChat] = useState("");
-  const [vision, setVision] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<{ text: string; bad?: boolean }>({ text: "" });
-  useEffect(() => {
-    if (data?.current && !busy) {
-      setChat((c) => c || data.current.chat);
-      setVision((v) => v || data.current.vision);
-    }
-  }, [data, busy]);
-  const save = async (body: object) => {
-    setBusy(true);
-    setMessage({ text: "正在试调…" });
-    try {
-      const result = await adminPost<Models>("models", body);
-      setMessage({ text: result.message || "" });
-      client.setQueryData(["admin", "models"], result);
-      setChat(result.current.chat);
-      setVision(result.current.vision);
-      window.setTimeout(() => client.invalidateQueries({ queryKey: ["admin", "models"] }), 12000);
-    } catch (error) {
-      setMessage({ text: (error as Error).message || "保存失败。", bad: true });
-    } finally {
-      setBusy(false);
-    }
-  };
   const models = data?.models || {};
-  const history = (data?.history || []).slice(0, 5).map((item) => shortTime(item.at) + " "
-    + (["chat", "vision"] as const).filter((kind) => item[kind]).map((kind) => (kind === "chat" ? "聊天 " : "看图 ") + item[kind]![0] + " → " + item[kind]![1]).join("，")).join("；");
   const started = data?.started_at ? "大豆启动于 " + shortTime(data.started_at) + (data.provider ? "，智谱接口 " + data.provider : "") : "";
-  const options = (kind: "chat" | "vision") => (data?.choices[kind] || []).map((name) => (
-    <option key={name} value={name}>{name}{name === data?.defaults[kind] ? "（默认）" : ""}</option>
-  ));
+  const configured = (kind: "chat" | "vision", label: string) => (
+    <div>
+      <label>{label}（<code>{data?.env?.[kind] ?? (kind === "chat" ? "LLM_MODEL" : "LLM_VISION_MODEL")}</code>）</label>
+      <input type="text" readOnly value={data ? data.current[kind] + (data.current[kind] === data.defaults[kind] ? "（默认）" : "") : ""} />
+    </div>
+  );
   return (
     <section id="sec-models">
       <h2>模型</h2>
       <p className="meta">大豆这次启动后实际在用的模型。次数是今天的，0 点清零；主模型失败时才会轮到备用模型。不显示 Key。</p>
       <div className="row">
-        <div><label>聊天回答</label><select value={chat} onChange={(e) => setChat(e.target.value)}>{options("chat")}</select></div>
-        <div><label>看图</label><select value={vision} onChange={(e) => setVision(e.target.value)}>{options("vision")}</select></div>
-        <button className="primary" disabled={busy} onClick={() => save({ chat, vision })}>试调并保存</button>
-        <button disabled={busy} onClick={() => save({ action: "reset" })}>恢复默认</button>
+        {configured("chat", "聊天回答")}
+        {configured("vision", "看图")}
       </div>
-      <p className="meta" style={{ marginTop: 6 }}>只能选智谱免费的 flash 模型。保存前会先各问一句，答不上来就不保存；保存后自动重启大豆。评价用的 composer-2.5 是 Cursor 的，这里不改。</p>
-      <p className="meta">{message.bad ? <span className="bad">{message.text}</span> : message.text}</p>
+      <p className="meta" style={{ marginTop: 6 }}>
+        模型在项目根目录的 <code>.env</code> 里改，没填就用默认的智谱 flash 模型；改完点右上角「停止」再「启动」。评价用的 composer-2.5 是 Cursor 的，这里不改。
+      </p>
       <div className="table-wrap">
         <table>
           <thead><tr><th>用途</th><th>模型</th><th>备用</th><th>今天成功 / 失败</th><th>最近成功</th><th>最近失败</th></tr></thead>
@@ -85,7 +57,7 @@ function ModelsSection() {
           </tbody>
         </table>
       </div>
-      <p className="meta">{started}{history ? "。最近改动：" + history : ""}</p>
+      <p className="meta">{started}</p>
     </section>
   );
 }

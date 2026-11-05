@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "react-router";
 import { api } from "../../api/client";
 import { ToastProvider, useToast } from "../../components/Toast";
 import { usePageTitle } from "../../lib/usePageTitle";
@@ -63,7 +64,7 @@ function Board() {
 
   return (
     <>
-      <header><a className="brand" href="/merge/">MERGE REVIEW <span>大豆 · 合并确认</span></a></header>
+      <header><Link className="brand" to="/merge/">MERGE REVIEW <span>大豆 · 合并确认</span></Link></header>
       <main>
         <h1>合并确认</h1>
         <p className="muted">

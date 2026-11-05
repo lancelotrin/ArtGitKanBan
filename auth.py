@@ -6,11 +6,17 @@
   FEISHU_REDIRECT_URI   可选，默认 http://<访问的域名>/auth/feishu/callback
 需要在飞书开放平台 → 应用 → 安全设置 → 重定向 URL 里加上这个回调地址。
 
+部门：登录时用应用身份（tenant_access_token）查通讯录拿到所在部门，显示在名字边上，聊天时也告诉模型。
+  要在开放平台 → 权限管理开通「获取用户组织架构信息」contact:user.department:readonly 和
+  「获取部门基础信息」contact:department.base:readonly，并把通讯录权限范围设成全员（或包含要登录的人）。
+  查不到（没权限、不在范围里）不影响登录，部门留空，原因写进日志。
+
 角色：user（普通）/ admin（管理员）。还没有管理员时，第一个登录的人自动成为管理员。
 命令行：
   python auth.py list               列出登录过的人
   python auth.py admin <名字或open_id>   设为管理员
   python auth.py user <名字或open_id>    取消管理员
+  python auth.py departments        给登录过的人补查一遍部门
 """
 import hashlib
 import json
@@ -35,6 +41,9 @@ STATE_SECONDS = 600
 AUTHORIZE_URL = "https://accounts.feishu.cn/open-apis/authen/v1/authorize"
 TOKEN_URL = "https://open.feishu.cn/open-apis/authen/v2/oauth/token"
 USER_INFO_URL = "https://open.feishu.cn/open-apis/authen/v1/user_info"
+TENANT_TOKEN_URL = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
+CONTACT_USER_URL = "https://open.feishu.cn/open-apis/contact/v3/users/{}?user_id_type=open_id&department_id_type=open_department_id"
+DEPARTMENT_URL = "https://open.feishu.cn/open-apis/contact/v3/departments/{}?department_id_type=open_department_id"
 ROLES = ("user", "admin")
 
 _lock = threading.Lock()
@@ -171,8 +180,73 @@ def finish_login(host: str, code: str, state: str, cookie_state: str) -> tuple:
     data = info.get("data") or {}
     if info.get("code") != 0 or not data.get("open_id"):
         raise AuthError(f"读不到飞书用户信息：{info.get('msg') or info.get('code')}")
+    data["department"] = lookup_department(data["open_id"])
     user = remember_user(data)
     return user, create_session(user["open_id"]), entry["next"]
+
+
+# ---------- 部门 ----------
+
+_tenant = {"token": "", "until": 0.0}
+_department_names: dict = {}  # open_department_id -> 名称，进程内缓存
+
+
+def tenant_token() -> str:
+    """应用身份的 token，有效期 2 小时，提前 5 分钟换新的。"""
+    if _tenant["token"] and time.time() < _tenant["until"]:
+        return _tenant["token"]
+    config = feishu_config()
+    if not config["app_id"] or not config["app_secret"]:
+        raise AuthError("还没配置飞书应用")
+    body = _post_json(TENANT_TOKEN_URL, {"app_id": config["app_id"], "app_secret": config["app_secret"]})
+    if body.get("code") != 0 or not body.get("tenant_access_token"):
+        raise AuthError(f"拿不到应用 token：{body.get('msg') or body.get('code')}")
+    _tenant.update(token=body["tenant_access_token"], until=time.time() + int(body.get("expire") or 7200) - 300)
+    return _tenant["token"]
+
+
+def department_name(department_id: str, headers: dict) -> str:
+    if department_id in _department_names:
+        return _department_names[department_id]
+    body = _get_json(DEPARTMENT_URL.format(urllib.parse.quote(department_id)), headers)
+    name = str(((body.get("data") or {}).get("department") or {}).get("name") or "") if body.get("code") == 0 else ""
+    if name:
+        _department_names[department_id] = name
+    return name
+
+
+def lookup_department(open_id: str) -> str:
+    """返回部门名称，多个部门用「、」连起来；查不到返回空字符串（不影响登录）。"""
+    try:
+        headers = {"Authorization": f"Bearer {tenant_token()}"}
+        body = _get_json(CONTACT_USER_URL.format(urllib.parse.quote(open_id)), headers)
+        if body.get("code") != 0:
+            raise AuthError(f"查通讯录失败：{body.get('msg') or body.get('code')}")
+        user = (body.get("data") or {}).get("user") or {}
+        if "department_ids" not in user:  # 没开权限时飞书不报错，只是不返回这个字段
+            raise AuthError("飞书没返回 department_ids，应用还没开通读部门的权限")
+        ids = user["department_ids"] or []
+        names = [name for name in (department_name(str(item), headers) for item in ids[:3]) if name]
+        return "、".join(names)[:60]
+    except AuthError as error:
+        print(f"[auth] 部门没查到 {open_id}：{error}（要开通 contact:user.department:readonly、"
+              f"contact:department.base:readonly，通讯录权限范围要包含这个人）", flush=True)
+        return ""
+
+
+def refresh_departments() -> list:
+    """给登录过的人补查部门，返回 [(名字, 部门)]。查不到的保留原来的。"""
+    done = []
+    for open_id in list(load_users()):
+        department = lookup_department(open_id)
+        with _lock:
+            users = load_users()
+            if open_id in users and department:
+                users[open_id]["department"] = department
+                _write(USERS_PATH, users)
+            user = users.get(open_id) or {}
+        done.append((user.get("name", open_id), user.get("department", "")))
+    return done
 
 
 # ---------- 用户 ----------
@@ -192,13 +266,16 @@ def remember_user(info: dict) -> dict:
         user.update(name=str(info.get("name") or info.get("en_name") or open_id)[:40],
                     avatar=str(info.get("avatar_url") or info.get("avatar_thumb") or ""),
                     union_id=str(info.get("union_id") or ""), last_login=now)
+        if info.get("department"):  # 这次没查到就保留上次的
+            user["department"] = str(info["department"])[:60]
         users[open_id] = user
         _write(USERS_PATH, users)
     return dict(user)
 
 
 def public_user(user: dict) -> dict:
-    return {key: user.get(key, "") for key in ("open_id", "name", "avatar", "role", "first_login", "last_login")}
+    return {key: user.get(key, "") for key in ("open_id", "name", "department", "avatar", "role", "first_login",
+                                                "last_login")}
 
 
 def list_users() -> list:
@@ -308,7 +385,12 @@ def read_cookie(header: str, name: str) -> str:
 def main(argv: list) -> int:
     if len(argv) == 2 and argv[1] == "list":
         for user in list_users():
-            print(f"{user['role']:5}  {user['name']}  {user['open_id']}  最近登录 {user['last_login']}")
+            print(f"{user['role']:5}  {user['name']}  {user['department'] or '-'}  {user['open_id']}  "
+                  f"最近登录 {user['last_login']}")
+        return 0
+    if len(argv) == 2 and argv[1] == "departments":
+        for name, department in refresh_departments():
+            print(f"{name}  {department or '（没查到）'}")
         return 0
     if len(argv) == 3 and argv[1] in ROLES:
         try:

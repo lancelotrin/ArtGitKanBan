@@ -9,6 +9,7 @@ import threading
 
 BOT_DIR = os.path.dirname(os.path.abspath(__file__))
 HISTORY_PATH = os.path.join(BOT_DIR, "bomb_history.json")
+STATE_PATH = os.path.join(BOT_DIR, "bomb.json")  # 炸线扫描的开关、间隔、上次/下次时间（echo_bot 写）
 KEEP_DAYS = 90
 BEIJING_TZ = datetime.timezone(datetime.timedelta(hours=8))
 _lock = threading.Lock()
@@ -143,3 +144,17 @@ def board_view() -> dict:
     data = load()
     return {"records": list_records(), "updated_at": data.get("updated_at", ""), "backfilled_at": data.get("backfilled_at", ""),
             "keep_days": KEEP_DAYS}
+
+
+def scan_info() -> dict:
+    """自动检查的状态，炸线看板顶上那行用。"""
+    try:
+        with open(STATE_PATH, encoding="utf-8") as state_file:
+            state = json.load(state_file)
+    except (OSError, ValueError):
+        state = {}
+    if not isinstance(state, dict):
+        state = {}
+    enabled = state.get("enabled", True) is not False
+    return {"enabled": enabled, "minutes": state.get("minutes") or 30, "last_at": state.get("last_at", ""),
+            "next_at": state.get("next_at", "") if enabled else ""}

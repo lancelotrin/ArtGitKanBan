@@ -25,6 +25,7 @@ function Row({ user, self }: { user: Account; self: boolean }) {
   return (
     <tr>
       <td>{user.name}{self && <span className="meta">（我）</span>}</td>
+      <td>{user.department || <span className="meta">—</span>}</td>
       <td>{admin ? <b>管理员</b> : "普通用户"}</td>
       <td>{user.first_login}</td>
       <td>{user.last_login}</td>
@@ -48,10 +49,10 @@ export default function UsersTab({ me }: { me: Me }) {
       <p className="meta">用飞书登录过的人都在这里。普通用户只能用子站（许愿、+1、合并选边）；管理员还能进后台改设置、管心愿墙、在本机检查工程，并能代别人处理心愿。</p>
       <div className="table-wrap">
         <table>
-          <thead><tr><th>姓名</th><th>角色</th><th>第一次登录</th><th>最近登录</th><th></th></tr></thead>
+          <thead><tr><th>姓名</th><th>部门</th><th>角色</th><th>第一次登录</th><th>最近登录</th><th></th></tr></thead>
           <tbody>
             {users.length ? users.map((u) => <Row key={u.open_id} user={u} self={u.open_id === me.open_id} />)
-              : <tr><td colSpan={5} className="meta">还没有人登录过。</td></tr>}
+              : <tr><td colSpan={6} className="meta">还没有人登录过。</td></tr>}
           </tbody>
         </table>
       </div>

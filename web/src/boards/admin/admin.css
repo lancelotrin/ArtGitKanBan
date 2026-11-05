@@ -1,10 +1,10 @@
-/* admin 由旧页面样式加上 .admin-page 前缀生成，避免和别的页面串样式。 */
+/* admin 页面样式：全部挂在 .admin-page 下，避免和别的页面串样式。 */
 .admin-page { color-scheme: light; --bg:#f4f6fb; --card:#fff; --line:#e6e9f2; --ink:#1b2333; --muted:#6b7386; --brand:#3d5afe; --brand-soft:#eef1ff; --ok:#14804a; --ok-soft:#e7f6ee; --bad:#c0262d; --bad-soft:#fdecec; --side:#141b34; --side-2:#1f2850; }
 .admin-page, .admin-page * { box-sizing: border-box; }
 .admin-page { margin: 0; font: 14px/1.6 "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; background: var(--bg); color: var(--ink); }
 .admin-page a { color: var(--brand); }
 .admin-page .shell { display: flex; min-height: 100vh; }
-.admin-page .side { width: 216px; flex: none; background: linear-gradient(180deg, var(--side), var(--side-2)); color: #cdd3ea; position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; padding: 18px 12px; }
+.admin-page .side { width: 216px; flex: none; background: linear-gradient(180deg, var(--side), var(--side-2)); color: #cdd3ea; position: sticky; top: var(--app-nav-h); height: calc(100vh - var(--app-nav-h)); display: flex; flex-direction: column; padding: 18px 12px; }
 .admin-page .brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px 18px; color: #fff; }
 .admin-page .brand .logo { width: 34px; height: 34px; border-radius: 10px; background: linear-gradient(135deg, #5b74ff, #3d5afe); display: grid; place-items: center; font-weight: 700; }
 .admin-page .brand b { display: block; font-size: 15px; }
@@ -18,7 +18,7 @@
 .admin-page .side-foot { margin-top: auto; padding: 12px; font-size: 12px; color: #8f98bd; border-top: 1px solid rgba(255,255,255,.08); }
 .admin-page .side-foot a { color: #b9c3ff; word-break: break-all; }
 .admin-page .content { flex: 1; min-width: 0; }
-.admin-page .topbar { position: sticky; top: 0; z-index: 4; display: flex; gap: 14px; align-items: center; padding: 14px 28px; background: rgba(244,246,251,.92); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+.admin-page .topbar { position: sticky; top: var(--app-nav-h); z-index: 4; display: flex; gap: 14px; align-items: center; padding: 14px 28px; background: rgba(244,246,251,.92); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
 .admin-page .topbar h1 { margin: 0; font-size: 18px; font-weight: 650; }
 .admin-page #topStatus { font-size: 13px; color: var(--muted); }
 .admin-page #topStatus .ok, .admin-page #topStatus .bad { display: inline-block; padding: 1px 10px; border-radius: 999px; }
@@ -30,7 +30,7 @@
 .admin-page .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
 .admin-page .grid2 > section { margin-bottom: 0; }
 .admin-page .grid2 + section, .admin-page section + .grid2 { margin-top: 18px; }
-.admin-page section { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; margin-bottom: 18px; box-shadow: 0 4px 18px rgba(20,27,52,.04); scroll-margin-top: 84px; }
+.admin-page section { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; margin-bottom: 18px; box-shadow: 0 4px 18px rgba(20,27,52,.04); scroll-margin-top: calc(84px + var(--app-nav-h)); }
 .admin-page h2 { margin: 0 0 6px; font-size: 15px; font-weight: 650; }
 .admin-page h2 + .meta, .admin-page h2 + p.meta { margin-top: 0; margin-bottom: 12px; }
 .admin-page .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
@@ -57,7 +57,7 @@
 .admin-page .handled { opacity: 0.45; }
 .admin-page pre { white-space: pre-wrap; background: #0f172a; color: #e2e8f0; border-radius: 10px; padding: 12px 14px; margin: 8px 0 0; max-height: 360px; overflow: auto; font: 12px/1.55 Consolas, monospace; }
 .admin-page label { display: block; margin: 12px 0 4px; color: var(--muted); font-size: 13px; }
-.admin-page .pager { display: flex; gap: 8px; align-items: center; margin: 4px 0 10px; position: sticky; top: 62px; z-index: 2; background: var(--card); padding: 6px 0; }
+.admin-page .pager { display: flex; gap: 8px; align-items: center; margin: 4px 0 10px; position: sticky; top: calc(62px + var(--app-nav-h)); z-index: 2; background: var(--card); padding: 6px 0; }
 .admin-page .pager .meta { margin: 0 6px 0 0; }
 .admin-page .pager button:disabled { opacity: 1; color: #a3a3a3; border-color: #eceef4; background: #fafbfd; }
 .admin-page .table-wrap { overflow: auto; }

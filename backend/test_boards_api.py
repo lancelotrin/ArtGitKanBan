@@ -14,7 +14,7 @@ import auth
 import bomb_board
 import console
 import merge_web
-import review_web
+import review_board
 from backend import app as board_app
 from backend.app import app
 
@@ -31,14 +31,14 @@ class BoardsApiTest(unittest.TestCase):
         root = self.tmp.name
         self.saved = {
             (auth, "USERS_PATH"): auth.USERS_PATH, (auth, "SESSIONS_PATH"): auth.SESSIONS_PATH,
-            (bomb_board, "HISTORY_PATH"): bomb_board.HISTORY_PATH, (review_web, "REVIEW_DIR"): review_web.REVIEW_DIR,
+            (bomb_board, "HISTORY_PATH"): bomb_board.HISTORY_PATH, (review_board, "REVIEW_DIR"): review_board.REVIEW_DIR,
             (merge_web, "SESSIONS_DIR"): merge_web.SESSIONS_DIR, (merge_web, "PROJECTS_PATH"): merge_web.PROJECTS_PATH,
             (console, "NOTES_PATH"): console.NOTES_PATH, (console, "PEOPLE_PATH"): console.PEOPLE_PATH,
         }
         auth.USERS_PATH = os.path.join(root, "users.json")
         auth.SESSIONS_PATH = os.path.join(root, "sessions.json")
         bomb_board.HISTORY_PATH = os.path.join(root, "bomb_history.json")
-        review_web.REVIEW_DIR = os.path.join(root, "reviews")
+        review_board.REVIEW_DIR = os.path.join(root, "reviews")
         merge_web.SESSIONS_DIR = Path(root) / "sessions"
         merge_web.PROJECTS_PATH = os.path.join(root, "merge_projects.json")
         console.NOTES_PATH = os.path.join(root, "notes.json")
@@ -94,7 +94,7 @@ class BoardsApiTest(unittest.TestCase):
     def test_me_and_sites(self) -> None:
         self.assertEqual(self.user.get("/api/v1/me").json()["role"], "user")
         sites = self.user.get("/api/v1/sites").json()["sites"]
-        self.assertEqual([s["port"] for s in sites], ["/review", "/wish", "/bomb", "/merge"])
+        self.assertEqual([s["port"] for s in sites], ["/review", "/wish", "/bomb", "/merge", "/chat", "/help"])
 
     # ---------- 炸线 ----------
 
@@ -110,11 +110,11 @@ class BoardsApiTest(unittest.TestCase):
     # ---------- 复盘 ----------
 
     def seed_reviews(self) -> None:
-        day = os.path.join(review_web.REVIEW_DIR, "2026-11-04")
+        day = os.path.join(review_board.REVIEW_DIR, "2026-11-04")
         self.write(os.path.join(day, "zhuhui.json"), {
             "name": "朱辉", "git_author": "zhuhui", "status": "ok", "report_md": REPORT, "bomb_out_md": "",
             "commits": [{"hash": "abc1234", "branch": "main", "line": "abc|zhuhui|11-04 10:00|改 <Shader>", "diff": "+a\n-b"}]})
-        self.write(os.path.join(review_web.REVIEW_DIR, "2026-11-03", "zhuhui.json"),
+        self.write(os.path.join(review_board.REVIEW_DIR, "2026-11-03", "zhuhui.json"),
                    {"name": "朱辉", "git_author": "zhuhui", "status": "empty", "commits": []})
 
     def test_review_day_person_report(self) -> None:
@@ -177,10 +177,10 @@ class BoardsApiTest(unittest.TestCase):
         cross = self.admin.post("/api/v1/admin/stop", headers={"Origin": "http://evil.example"})
         self.assertEqual(cross.status_code, 403)
 
-    def test_admin_wish_matches_legacy(self) -> None:
-        legacy_status, legacy = console.admin_get("/api/wish", {})
-        self.assertEqual(legacy_status, 200)
-        self.assertEqual(self.admin.get("/api/v1/admin/wish").json()["total"], legacy["total"])
+    def test_admin_wish_view(self) -> None:
+        status, view = console.admin_get("/api/wish", {})
+        self.assertEqual(status, 200)
+        self.assertEqual(self.admin.get("/api/v1/admin/wish").json()["total"], view["total"])
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { Link } from "react-router";
 import { useToast } from "../../components/Toast";
 import { useSites } from "../auth/AuthPages";
 import { adminPost, shortTime, useAdmin } from "./common";
@@ -24,8 +25,8 @@ function Sites() {
             <div className="site-desc">{site.desc}</div>
             <div className="site-url">{site.url}</div>
             <div className="row">
-              <a className="btnlink primary" target="_blank" rel="noopener" href={site.url}>打开</a>
-              <a className="btnlink" target="_blank" rel="noopener" href={site.local}>本机打开</a>
+              <Link className="btnlink primary" to={site.port + "/"}>打开</Link>
+              <button type="button" className="btnlink" onClick={() => navigator.clipboard?.writeText(site.url)}>复制地址</button>
               {site.manage && <a className="btnlink" href={site.manage}>管理</a>}
             </div>
           </div>
@@ -74,7 +75,7 @@ function WishManager() {
   const [editing, setEditing] = useState(0);
   const [status, setStatus] = useState("");
   const [search, setSearch] = useState("");
-  // 和旧页面一样：成功就关掉编辑行；失败弹出原因，编辑行留着。
+  // 成功就关掉编辑行；失败弹出原因，编辑行留着。
   const act = async (payload: object) => {
     try {
       const result = await adminPost<WishAdmin>("wish", payload);

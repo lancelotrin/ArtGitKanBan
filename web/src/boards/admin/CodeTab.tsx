@@ -1,37 +1,26 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router";
 import { ActionButton, adminPost, Clip, Lines, OnOff, stamp, useAdmin, useSynced } from "./common";
 import type { BombAdmin, PullState, Status, WatchState } from "./types";
 
 const BOMB_BOARD = "/bomb/";
 
 function ProjectConfig({ status }: { status?: Status }) {
-  const [root, setRoot, resetRoot] = useSynced(status?.project_root, "");
-  const [branches, setBranches, resetBranches] = useSynced(status?.git_branches?.join("\n"), "");
-  const [message, setMessage] = useState("");
   const [checkout, setCheckout] = useState("");
   const [checkoutMsg, setCheckoutMsg] = useState("");
   useEffect(() => {
     if (status?.file_branch) setCheckout((current) => current || status.file_branch);
   }, [status?.file_branch]);
-  const save = (restart: boolean) => async () => {
-    await adminPost("config", { project_root: root, git_branches: branches.split(/\n+/), restart });
-    resetRoot();
-    resetBranches();
-    setMessage(restart ? "已保存并重启。" : "已保存。重启大豆后，飞书那边才用新目录和新分支。");
-  };
   return (
     <section>
       <h2>工程</h2>
-      <p className="meta">文件内容（面数、引用、Shader）读这里磁盘上的检出。</p>
-      <label>Client 目录</label>
-      <input type="text" value={root} onChange={(e) => setRoot(e.target.value)} />
-      <label>允许查询的 Git 分支，一行一个。提交记录只 fetch 这些分支，main 会保留，盯目录也只盯这里。</label>
-      <textarea value={branches} onChange={(e) => setBranches(e.target.value)} />
-      <div className="row" style={{ marginTop: 10 }}>
-        <ActionButton className="primary" label="保存" done="已保存" run={save(false)} />
-        <ActionButton label="保存并重启" done="已保存并重启" run={save(true)} />
-      </div>
-      <p className="meta">{message}</p>
+      <p className="meta">
+        文件内容（面数、引用、Shader）读部署这台电脑上的检出。目录和分支在项目根目录的 <code>.env</code> 里改，改完点右上角「停止」再「启动」。
+      </p>
+      <label>Client 目录（<code>PROJECT_ROOT</code>，下面要有 Assets）</label>
+      <input type="text" value={status?.project_root ?? ""} readOnly />
+      <label>允许查询的 Git 分支（<code>GIT_BRANCHES</code>，逗号分隔）。提交记录只 fetch 这些分支，main 总会带上，盯目录也只盯这里。</label>
+      <input type="text" value={(status?.git_branches ?? []).join(", ")} readOnly />
       <div className="sub">
         <label>切工作区到这个分支（远端要有）。有本地修改会先清掉。和上面「查询分支」不是一回事。</label>
         <div className="row">
@@ -180,7 +169,7 @@ function BombSection() {
         <div className="row" style={{ marginTop: 8 }}><ActionButton label="保存忽略路径" done="已保存" run={saveList("ignore_paths", resetIgnore)} /></div>
       </div>
       <div className="sub">
-        <label>最近报出的（完整历史看 <a href={BOMB_BOARD} target="_blank" rel="noopener">炸线看板</a>）</label>
+        <label>最近报出的（完整历史看 <Link to={BOMB_BOARD}>炸线看板</Link>）</label>
         <div>
           {(data?.recent || []).length ? data!.recent.map((item, i) => (
             <div key={i}>

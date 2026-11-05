@@ -1,4 +1,4 @@
-/* review 由旧页面样式加上 .review-page 前缀生成，避免和别的页面串样式。 */
+/* review 页面样式：全部挂在 .review-page 下，避免和别的页面串样式。 */
 .review-page { --bg:#f4f6fb; --card:#fff; --line:#e6e9f2; --text:#1b2333; --sub:#6b7386; --brand:#3d5afe; --brand-soft:#eef1ff; --ok:#14804a; --ok-soft:#e7f6ee; --warn:#b4540b; --warn-soft:#fff3e6; --bad:#c0262d; --bad-soft:#fdecec; --mute-soft:#f0f2f6; }
 .review-page, .review-page * { box-sizing:border-box; }
 .review-page { margin:0; background:var(--bg); color:var(--text); font:14px/1.6 "Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; }

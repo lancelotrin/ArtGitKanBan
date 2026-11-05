@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ToastProvider } from "../../components/Toast";
-import { logout, type Me } from "../auth/AuthPages";
+import type { Me } from "../auth/AuthPages";
 import ChatTab from "./ChatTab";
 import CodeTab from "./CodeTab";
 import { ActionButton, adminPost, useAdmin } from "./common";
@@ -12,7 +12,7 @@ import type { Status } from "./types";
 import UsersTab from "./UsersTab";
 import "./admin.css";
 
-// 页签用网址的 #hash 记，和旧后台一样；#sec-xxx 会跳到对应页签再滚到那一段（门户卡片的“管理”链接用它）。
+// 页签用网址的 #hash 记；#sec-xxx 会跳到对应页签再滚到那一段（门户卡片的“管理”链接用它）。
 const TABS: [string, string, string][] = [
   ["overview", "◎", "概览"], ["code", "⌥", "代码"], ["review", "✓", "复盘"], ["chat", "✎", "对话"],
   ["sites", "◫", "网站"], ["settings", "⚙", "设置"], ["users", "☺", "账号"],
@@ -76,8 +76,6 @@ function Shell({ me }: { me: Me }) {
           <div className="spacer" />
           <ActionButton className="primary" label="启动" done="已启动" disabled={!status || status.running} run={() => adminPost("start")} />
           <ActionButton label="停止" done="已停止" disabled={!status || !status.running} run={() => adminPost("stop")} />
-          <span className="meta" style={{ margin: 0 }}>{me.name} · 管理员</span>
-          <button onClick={logout}>退出</button>
         </div>
         <main>
           {tab === "overview" && <OverviewTab status={status} />}

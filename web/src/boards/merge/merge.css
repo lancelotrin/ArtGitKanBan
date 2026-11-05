@@ -1,4 +1,4 @@
-/* merge 由旧页面样式加上 .merge-page 前缀生成，避免和别的页面串样式。 */
+/* merge 页面样式：全部挂在 .merge-page 下，避免和别的页面串样式。 */
 .merge-page { --ink:#1c2926;--muted:#66736e;--line:#dfe6df;--green:#176c4e;--bg:#f4f6f2;--warn:#986212;--bad:#b42318 }
 .merge-page, .merge-page * { box-sizing:border-box }
 .merge-page { margin:0;background:var(--bg);color:var(--ink);font:14px/1.6 "Segoe UI","PingFang SC","Microsoft YaHei",sans-serif }

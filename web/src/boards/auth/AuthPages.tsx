@@ -1,10 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
-import { useSearchParams } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { api } from "../../api/client";
 import { usePageTitle } from "../../lib/usePageTitle";
 import "./auth.css";
 
-export interface Me { open_id: string; name: string; avatar: string; role: string; first_login: string; last_login: string }
+export interface Me { open_id: string; name: string; department?: string; avatar: string; role: string; first_login: string; last_login: string }
 export interface Site { name: string; icon: string; color: string; port: string; desc: string; manage: string; url: string; local: string; online: boolean }
 
 export const useMe = () => useQuery({ queryKey: ["me"], queryFn: () => api<Me>("/me"), staleTime: 60_000 });
@@ -49,17 +49,13 @@ export function Portal({ me }: { me: Me }) {
   const { data } = useSites();
   return (
     <div className="auth-page">
-      <header>
-        <span className="logo">豆</span><b>大豆</b><span className="spacer" />
-        <span className="muted">{me.name} · 普通用户</span>
-        <button className="btn" onClick={logout}>退出</button>
-      </header>
+      <header><b>你好，{me.name}</b><span className="spacer" /><span className="muted">点上面或下面的卡片切换</span></header>
       <main>
         {(data?.sites ?? []).map((site) => (
-          <a className="site card" href={site.port + "/"} key={site.port}>
+          <Link className="site card" to={site.port + "/"} key={site.port}>
             <span className="ico" style={{ background: site.color }}>{site.icon}</span>
             <span><b>{site.name}</b><span className="muted">{site.desc}</span></span>
-          </a>
+          </Link>
         ))}
       </main>
     </div>

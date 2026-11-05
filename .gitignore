@@ -47,3 +47,8 @@ sessions.json
 .venv/
 web/node_modules/
 web/dist/
+
+# Codex 临时目录
+_codex_work/
+wiki/*.tmp
+help.json
