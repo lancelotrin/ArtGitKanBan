@@ -1,4 +1,4 @@
-# 新后端（server/）的依赖。老的看板和机器人仍然只用标准库。
+# 新后端（backend/）的依赖。老的看板和机器人仍然只用标准库。
 # 安装：python -m pip install -r requirements.txt
 fastapi>=0.115
 uvicorn>=0.30

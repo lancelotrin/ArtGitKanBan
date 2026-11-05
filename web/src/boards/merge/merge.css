@@ -1,0 +1,40 @@
+/* merge 由旧页面样式加上 .merge-page 前缀生成，避免和别的页面串样式。 */
+.merge-page { --ink:#1c2926;--muted:#66736e;--line:#dfe6df;--green:#176c4e;--bg:#f4f6f2;--warn:#986212;--bad:#b42318 }
+.merge-page, .merge-page * { box-sizing:border-box }
+.merge-page { margin:0;background:var(--bg);color:var(--ink);font:14px/1.6 "Segoe UI","PingFang SC","Microsoft YaHei",sans-serif }
+.merge-page header { height:64px;display:flex;align-items:center;justify-content:space-between;padding:0 4vw;background:#fff;border-bottom:1px solid var(--line) }
+.merge-page .brand { font-weight:850;letter-spacing:2px;color:var(--ink);text-decoration:none }
+.merge-page .brand span { font-size:11px;font-weight:500;letter-spacing:1px;margin-left:16px;color:var(--muted) }
+.merge-page main { max-width:1200px;margin:auto;padding:30px 4vw 60px }
+.merge-page h1 { font-size:28px;margin:0 0 6px }
+.merge-page h2 { font-size:17px;margin:0 0 12px }
+.merge-page .muted { color:var(--muted) }
+.merge-page .actions { display:flex;gap:10px;flex-wrap:wrap;margin:18px 0 26px }
+.merge-page button, .merge-page .btn, .merge-page input { font:inherit;border:1px solid var(--line);border-radius:7px;padding:8px 14px;background:#fff;color:var(--ink);text-decoration:none;cursor:pointer }
+.merge-page button.primary, .merge-page .btn.primary { background:var(--green);border-color:var(--green);color:#fff }
+.merge-page button:disabled { opacity:.5;cursor:wait }
+.merge-page button:hover { filter:brightness(.97) }
+.merge-page input { cursor:text }
+.merge-page .panel { background:#fff;border:1px solid var(--line);border-radius:12px;padding:20px 22px;margin-bottom:18px }
+.merge-page .proj { display:flex;gap:12px;align-items:center;padding:12px 0;border-top:1px solid var(--line);flex-wrap:wrap }
+.merge-page .proj:first-of-type { border-top:0 }
+.merge-page .proj .path { font:12px/1.5 Consolas,Menlo,monospace;flex:1;min-width:220px;overflow-wrap:anywhere }
+.merge-page .tag { font-size:11px;padding:2px 9px;border-radius:20px;background:#f0f3ed;white-space:nowrap }
+.merge-page .tag.warn { background:#fff0d8;color:var(--warn) }
+.merge-page .tag.good { background:#e3f1e8;color:var(--green) }
+.merge-page .tag.bad { background:#fde8e6;color:var(--bad) }
+.merge-page table { width:100%;border-collapse:collapse }
+.merge-page th, .merge-page td { text-align:left;padding:10px 8px;border-top:1px solid var(--line);vertical-align:top }
+.merge-page th { font-size:12px;color:var(--muted);font-weight:600;border-top:0 }
+.merge-page td.mono { font:12px/1.5 Consolas,Menlo,monospace;overflow-wrap:anywhere }
+.merge-page a { color:var(--green) }
+.merge-page .bar { height:6px;background:#eef2ec;border-radius:4px;overflow:hidden;min-width:80px;margin-top:4px }
+.merge-page .bar i { display:block;height:100%;background:var(--green) }
+.merge-page .addrow { display:flex;gap:8px;margin-top:12px;flex-wrap:wrap }
+.merge-page .addrow input { flex:1;min-width:240px }
+.merge-page #toast { position:fixed;right:20px;bottom:20px;background:#1c2926;color:#fff;padding:10px 16px;border-radius:8px;max-width:420px;white-space:pre-wrap }
+.merge-page #toast.err { background:var(--bad) }
+.merge-page .empty { color:var(--muted);padding:12px 0 }
+@media (max-width:700px) {
+  .merge-page .hide-sm { display:none }
+}

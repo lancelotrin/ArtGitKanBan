@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 import wish_board
-from server.deps import current_user, same_origin
+from backend.deps import current_user, same_origin
 
 router = APIRouter(prefix="/wishes", tags=["心愿墙"])
 

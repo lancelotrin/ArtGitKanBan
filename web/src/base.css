@@ -1,2 +1,9 @@
-/* 全局只放最基础的东西；各看板的样式都包在自己的根类名里。 */
+/* 全局只放最基础的东西；各页面的样式都包在自己的根类名里（.wish-page、.admin-page …）。 */
 body { margin: 0; font: 14px/1.6 "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+.wish-page, .bomb-page, .review-page, .merge-page, .admin-page, .auth-page { min-height: 100vh; }
+/* 除心愿墙外各页面共用的提示条 */
+.app-toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(16px); background: #1b2333; color: #fff;
+  padding: 10px 16px; border-radius: 10px; z-index: 50; box-shadow: 0 8px 24px rgba(0,0,0,.18); opacity: 0; pointer-events: none;
+  transition: opacity .2s, transform .2s; max-width: min(640px, calc(100vw - 32px)); }
+.app-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.app-toast.bad { background: #c0262d; }

@@ -1,0 +1,26 @@
+/* auth 由旧页面样式加上 .auth-page 前缀生成，避免和别的页面串样式。 */
+.auth-page { color-scheme: light; --bg:#f4f6fb; --card:#fff; --line:#e6e9f2; --ink:#1b2333; --muted:#6b7386; --brand:#3d5afe; --bad:#c0262d; }
+.auth-page, .auth-page * { box-sizing: border-box; }
+.auth-page { margin: 0; min-height: 100vh; font: 14px/1.6 "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; background: var(--bg); color: var(--ink); }
+.auth-page .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 8px 30px rgba(20,27,52,.06); }
+.auth-page .logo { width: 44px; height: 44px; border-radius: 12px; background: linear-gradient(135deg, #5b74ff, #3d5afe); color: #fff; display: grid; place-items: center; font-weight: 700; font-size: 18px; }
+.auth-page .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid var(--line); background: #fff; color: var(--ink); border-radius: 10px; padding: 8px 16px; font: inherit; cursor: pointer; text-decoration: none; }
+.auth-page .btn:hover { border-color: var(--brand); color: var(--brand); }
+.auth-page .btn.primary { background: var(--brand); border-color: var(--brand); color: #fff; }
+.auth-page .btn.primary:hover { background: #2f4bef; color: #fff; }
+.auth-page .muted { color: var(--muted); font-size: 13px; }
+.auth-page .err { color: var(--bad); background: #fdecec; border-radius: 10px; padding: 8px 12px; font-size: 13px; }
+.auth-page .wrap { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
+.auth-page .login { width: 100%; max-width: 360px; padding: 32px 28px; text-align: center; }
+.auth-page .login h1 { font-size: 18px; margin: 14px 0 4px; }
+.auth-page .login .logo { margin: 0 auto; }
+.auth-page .login .btn.primary { width: 100%; margin-top: 20px; padding: 10px 16px; }
+.auth-page header { display: flex; align-items: center; gap: 12px; padding: 16px; max-width: 860px; margin: 0 auto; }
+.auth-page header .logo { width: 34px; height: 34px; font-size: 15px; border-radius: 10px; }
+.auth-page header b { font-size: 16px; }
+.auth-page .spacer { flex: 1; }
+.auth-page main { max-width: 860px; margin: 0 auto; padding: 0 16px 40px; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+.auth-page .site { display: flex; gap: 12px; padding: 16px; color: inherit; text-decoration: none; }
+.auth-page .site:hover { border-color: var(--brand); }
+.auth-page .site .ico { flex: none; width: 38px; height: 38px; border-radius: 10px; color: #fff; display: grid; place-items: center; font-size: 17px; }
+.auth-page .site b { display: block; margin-bottom: 2px; }

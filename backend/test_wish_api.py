@@ -1,6 +1,6 @@
 """心愿墙 API 测试：数据、用户和会话全部指到临时目录，不碰真实的 wishes.json。
 
-运行：.venv/bin/python -m unittest server.test_wish_api
+运行：.venv/bin/python -m unittest backend.test_wish_api
 """
 import json
 import os
@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 
 import auth
 import wish_board
-from server.app import app
+from backend.app import app
 
 
 class WishApiTest(unittest.TestCase):

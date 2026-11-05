@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../api/client";
 import { useToast } from "../../components/Toast";
 
-// 和 server/routers/wish.py 的 Pydantic 模型一一对应。
+// 和 backend/routers/wish.py 的 Pydantic 模型一一对应。
 export type WishStatus = "open" | "doing" | "done";
 
 export interface Wish {

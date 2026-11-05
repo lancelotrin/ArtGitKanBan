@@ -18,7 +18,7 @@ export default function WishBoard() {
   }, []);
   return (
     <div className="wish-page">
-      <ToastProvider>
+      <ToastProvider className="toast">
         <Board />
       </ToastProvider>
     </div>

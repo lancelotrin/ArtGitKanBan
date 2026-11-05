@@ -1,0 +1,102 @@
+/* review 由旧页面样式加上 .review-page 前缀生成，避免和别的页面串样式。 */
+.review-page { --bg:#f4f6fb; --card:#fff; --line:#e6e9f2; --text:#1b2333; --sub:#6b7386; --brand:#3d5afe; --brand-soft:#eef1ff; --ok:#14804a; --ok-soft:#e7f6ee; --warn:#b4540b; --warn-soft:#fff3e6; --bad:#c0262d; --bad-soft:#fdecec; --mute-soft:#f0f2f6; }
+.review-page, .review-page * { box-sizing:border-box; }
+.review-page { margin:0; background:var(--bg); color:var(--text); font:14px/1.6 "Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; }
+.review-page a { color:var(--brand); text-decoration:none; }
+.review-page a:hover { text-decoration:underline; }
+.review-page header { background:linear-gradient(120deg,#141b34,#25307a 60%,#3d5afe); color:#fff; }
+.review-page .hwrap { max-width:1180px; margin:0 auto; padding:22px 24px 64px; }
+.review-page .brand { display:flex; align-items:center; gap:10px; font-size:13px; opacity:.85; color:#fff; }
+.review-page .brand:hover { text-decoration:none; opacity:1; }
+.review-page .logo { width:26px; height:26px; border-radius:8px; background:rgba(255,255,255,.18); display:grid; place-items:center; font-weight:700; }
+.review-page h1 { margin:14px 0 4px; font-size:26px; font-weight:650; letter-spacing:.5px; }
+.review-page .hsub { opacity:.75; font-size:13px; }
+.review-page main { max-width:1180px; margin:-44px auto 40px; padding:0 24px; }
+.review-page .panel { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:18px 20px; box-shadow:0 6px 24px rgba(20,27,52,.06); margin-bottom:18px; }
+.review-page .toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:10px; }
+.review-page .spacer { flex:1; }
+.review-page .btn { display:inline-grid; place-items:center; height:36px; min-width:36px; padding:0 12px; border:1px solid var(--line); border-radius:10px; background:#fff; color:var(--text); font-size:13px; }
+.review-page .btn:hover { border-color:var(--brand); color:var(--brand); text-decoration:none; }
+.review-page .btn.off { opacity:.35; pointer-events:none; }
+.review-page input[type=date], .review-page input[type=search] { height:36px; border:1px solid var(--line); border-radius:10px; padding:0 12px; font:inherit; color:var(--text); background:#fff; }
+.review-page input[type=search] { width:220px; }
+.review-page input:focus { outline:none; border-color:var(--brand); box-shadow:0 0 0 3px var(--brand-soft); }
+.review-page .weekday { color:var(--sub); font-size:13px; }
+.review-page .chips { display:flex; gap:6px; flex-wrap:wrap; }
+.review-page .chip { height:32px; padding:0 12px; border-radius:999px; border:1px solid var(--line); background:#fff; color:var(--sub); font:inherit; font-size:13px; cursor:pointer; }
+.review-page .chip.on { background:var(--text); border-color:var(--text); color:#fff; }
+.review-page .chip b { font-weight:600; margin-left:4px; }
+.review-page .stats { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-top:16px; }
+.review-page .stat { border:1px solid var(--line); border-radius:12px; padding:12px 14px; }
+.review-page .stat .k { color:var(--sub); font-size:12px; }
+.review-page .stat .v { font-size:24px; font-weight:650; margin-top:2px; }
+.review-page .stat.warn .v { color:var(--warn); }
+.review-page .stat.bad .v { color:var(--bad); }
+.review-page .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(270px,1fr)); gap:14px; }
+.review-page .pcard { display:flex; flex-direction:column; gap:10px; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; color:var(--text); transition:transform .15s, box-shadow .15s, border-color .15s; }
+.review-page .pcard:hover { text-decoration:none; transform:translateY(-2px); box-shadow:0 10px 26px rgba(20,27,52,.10); border-color:#cfd5ea; }
+.review-page .pcard.is-risk { border-top:3px solid #f0a14a; }
+.review-page .pcard.is-bomb { border-top:3px solid var(--bad); }
+.review-page .ptop { display:flex; align-items:center; gap:10px; }
+.review-page .avatar { width:38px; height:38px; border-radius:12px; color:#fff; display:grid; place-items:center; font-weight:650; flex:none; }
+.review-page .avatar.big { width:52px; height:52px; border-radius:16px; font-size:20px; }
+.review-page .pname { font-weight:650; font-size:15px; }
+.review-page .pauthor { color:var(--sub); font-size:12px; }
+.review-page .ptop .pill { margin-left:auto; }
+.review-page .pill { display:inline-block; padding:2px 10px; border-radius:999px; font-size:12px; white-space:nowrap; }
+.review-page .p-clean { background:var(--ok-soft); color:var(--ok); }
+.review-page .p-risk { background:var(--warn-soft); color:var(--warn); }
+.review-page .p-bomb { background:var(--bad-soft); color:var(--bad); }
+.review-page .p-empty { background:var(--mute-soft); color:var(--sub); }
+.review-page .p-failed { background:var(--bad-soft); color:var(--bad); }
+.review-page .psum { color:#3a4357; font-size:13px; min-height:42px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.review-page .pfoot { display:flex; gap:12px; color:var(--sub); font-size:12px; border-top:1px dashed var(--line); padding-top:8px; }
+.review-page .pfoot .w { color:var(--warn); }
+.review-page .pfoot .b { color:var(--bad); }
+.review-page .none { text-align:center; color:var(--sub); padding:40px 0; }
+.review-page .crumb { font-size:13px; color:rgba(255,255,255,.75); margin-top:14px; }
+.review-page .crumb a { color:#fff; }
+.review-page .hero { display:flex; align-items:center; gap:14px; margin-top:14px; }
+.review-page .hero h1 { margin:0; }
+.review-page .hero .pill { margin-left:6px; vertical-align:middle; }
+.review-page section.panel h2 { font-size:15px; margin:0 0 12px; display:flex; align-items:center; gap:8px; }
+.review-page section.panel h2 .n { color:var(--sub); font-weight:400; font-size:13px; }
+.review-page .clist { list-style:none; margin:0; padding:0; }
+.review-page .clist > li { padding:12px 0; border-bottom:1px solid var(--line); }
+.review-page .clist > li:last-child { border-bottom:none; }
+.review-page .cmain { display:flex; gap:10px; align-items:baseline; flex-wrap:wrap; }
+.review-page .hash { font-family:Consolas,monospace; font-size:12px; background:var(--mute-soft); padding:1px 7px; border-radius:6px; color:#384056; }
+.review-page .br { font-size:11px; padding:1px 7px; border-radius:6px; background:var(--brand-soft); color:var(--brand); }
+.review-page .time { color:var(--sub); font-size:12px; white-space:nowrap; }
+.review-page .diffbox { margin-top:10px; border:1px solid var(--line); border-radius:10px; overflow:hidden; background:#fbfcfe; }
+.review-page .diffbox > summary { cursor:pointer; list-style:none; padding:8px 12px; color:var(--sub); font-size:12px; user-select:none; }
+.review-page .diffbox > summary::-webkit-details-marker { display:none; }
+.review-page .diffbox > summary::before { content:"▸ "; color:var(--brand); }
+.review-page .diffbox[open] > summary::before { content:"▾ "; }
+.review-page .diffbox > summary:hover { color:var(--text); background:#f3f5fb; }
+.review-page .diffpre { margin:0; padding:10px 12px 12px; overflow:auto; max-height:420px; font:12px/1.55 Consolas,"Sarasa Mono SC",monospace; background:#0f172a; color:#e2e8f0; border-top:1px solid var(--line); white-space:pre; }
+.review-page .diffpre .d-add { color:#86efac; background:rgba(34,197,94,.12); display:block; }
+.review-page .diffpre .d-del { color:#fca5a5; background:rgba(239,68,68,.12); display:block; }
+.review-page .diffpre .d-hunk { color:#93c5fd; display:block; }
+.review-page .diffpre .d-meta { color:#94a3b8; display:block; }
+.review-page .diffnote { color:var(--sub); font-size:12px; margin-top:8px; }
+.review-page .md .ln { margin:2px 0; }
+.review-page .md .gap { height:10px; }
+.review-page .md b { font-weight:650; }
+.review-page .lbl { display:inline-block; font-size:11px; padding:0 7px; border-radius:6px; margin-right:6px; vertical-align:1px; }
+.review-page .l-change { background:var(--brand-soft); color:var(--brand); }
+.review-page .l-impact { background:var(--mute-soft); color:#4a5368; }
+.review-page .l-gain { background:var(--ok-soft); color:var(--ok); }
+.review-page .l-risk { background:var(--warn-soft); color:var(--warn); }
+.review-page code { font-family:Consolas,monospace; background:var(--mute-soft); padding:1px 5px; border-radius:5px; font-size:12.5px; }
+.review-page .ext { font-size:12px; padding:0 6px; border:1px solid var(--line); border-radius:6px; color:var(--sub); }
+.review-page .ext:hover { color:var(--brand); border-color:var(--brand); text-decoration:none; }
+.review-page section.alert { border-left:4px solid var(--bad); }
+.review-page table { border-collapse:collapse; width:100%; }
+.review-page td, .review-page th { border-bottom:1px solid var(--line); padding:10px 8px; text-align:left; }
+.review-page th { color:var(--sub); font-weight:500; font-size:12px; }
+.review-page tr:hover td { background:#fafbfe; }
+@media (max-width:720px) {
+  .review-page .stats { grid-template-columns:repeat(2,1fr); }
+  .review-page input[type=search] { width:100%; }
+}

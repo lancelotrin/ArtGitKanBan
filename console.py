@@ -38,9 +38,23 @@ HOST = os.environ.get("CONSOLE_HOST", "127.0.0.1")
 PORT = int(os.environ.get("CONSOLE_PORT", "8765"))
 # 子站都挂在后台同一个端口下，只留一个入口
 MOUNTS = {"/review": "review_web", "/wish": "wish_web", "/bomb": "bomb_web", "/merge": "merge_web"}
-# 迁到新栈（server/ FastAPI + web/ React）的看板：这些前缀转发给本机的新后端，优先于 MOUNTS。
+# 迁到新栈（backend/ FastAPI + web/ React）的看板：这些前缀转发给本机的新后端，优先于 MOUNTS。
 # 新后端没起来时为 None，对应看板继续用 MOUNTS 里的旧页面。
 BOARD_API = None
+def board_route(path: str, rules: tuple) -> bool:
+    """rules 里以 / 结尾的是前缀（"/merge/s/"），"=/" 这种是整条路径，其它是前缀且含自身（"/wish" 管 /wish 和 /wish/...）。"""
+    for rule in rules:
+        if rule.startswith("="):
+            if path == rule[1:]:
+                return True
+        elif rule.endswith("/"):
+            if path.startswith(rule):
+                return True
+        elif path == rule or path.startswith(rule + "/"):
+            return True
+    return False
+
+
 HOP_HEADERS = {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailers",
                "transfer-encoding", "upgrade", "content-length", "x-forwarded-for", "server", "date"}
 BRANCH_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\-]{0,60}$")
@@ -1676,6 +1690,268 @@ def portal_page(user: dict) -> str:
 </body></html>"""
 
 
+def _reply(payload, status: int = 200) -> tuple:
+    return status, payload
+
+
+def admin_get(path: str, user: dict) -> tuple:
+    """管理员的读接口，返回 (状态码, JSON)。旧后台页面和新后端 /api/v1/admin/* 共用。"""
+    if path == "/api/users":
+        return _reply({"items": __import__("auth").list_users()})
+    if path == "/api/review":
+        return _reply(review_view())
+    if path == "/api/bomb":
+        import echo_bot
+        return _reply(echo_bot.bomb_view())
+    if path == "/api/wish":
+        import wish_board
+        return _reply(wish_board.admin_view())
+    if path == "/api/models":
+        return _reply(models_view())
+    if path == "/api/bilibili":
+        import echo_bot
+        view = echo_bot.bilibili_login_status()
+        return _reply({key: view.get(key) for key in ("set", "login", "uname", "message")})
+    if path == "/api/status":
+        now = time.time()
+        with _status_lock:
+            cached = _status_cache["data"]
+            if cached is not None and now - _status_cache["at"] < 15:
+                return _reply(cached)
+            config = load_config()
+            full_log = read_log()
+            log = "\n".join(full_log.splitlines()[-30:])
+            info = index_info()
+            branch, dirty = file_branch(config["project_root"])
+            with index_lock:
+                rebuilding = index_state["running"]
+                index_error = index_state["error"]
+            data = {
+                "running": bool(bot_processes()),
+                "connected": connected(full_log),
+                "running_root": running_root(full_log),
+                "project_root": config["project_root"],
+                "git_branches": config["git_branches"],
+                "file_branch": branch,
+                "dirty": dirty,
+                "last_reply": last_reply(full_log),
+                "index_exists": info["exists"],
+                "index_rows": info["rows"],
+                "index_time": info["time"],
+                "index_running": rebuilding,
+                "index_error": index_error,
+                "log": log,
+                "pull": pull_view(),
+                "watch": watch_view(),
+                "agents": agent_rows(),
+                "reminders": reminder_rows(),
+            }
+            _status_cache["data"] = data
+            _status_cache["at"] = time.time()
+        return _reply(data)
+    if path == "/api/reviews":
+        return _reply({"items": load_reviews()})
+    if path == "/api/questions":
+        return _reply({"items": load_questions()})
+    if path == "/api/misses":
+        return _reply({"items": load_misses()})
+    if path == "/api/notes":
+        return _reply({"items": load_notes()})
+    if path == "/api/people":
+        return _reply({"items": load_people()})
+    return _reply({"error": "没有这个页面"}, 404)
+
+
+def admin_post(path: str, data: dict, user: dict) -> tuple:
+    """管理员的写接口，返回 (状态码, JSON)。调用方负责登录、管理员和跨站检查。"""
+    try:
+        if path == "/api/users":
+            import auth
+            action = str(data.get("action") or "")
+            key = str(data.get("open_id") or "")
+            try:
+                if action in auth.ROLES:
+                    auth.set_role(key, action, by=user["open_id"])
+                elif action == "remove":
+                    auth.remove_user(key, by=user["open_id"])
+                else:
+                    raise ValueError("不认识的操作。")
+            except auth.AuthError as error:
+                raise ValueError(str(error))
+            return _reply({"ok": True, "items": auth.list_users()})
+        if path == "/api/start":
+            message = start_bot()
+            if message:
+                return _reply({"error": message}, 400)
+            else:
+                return _reply({"ok": True})
+        if path == "/api/stop":
+            return _reply({"stopped": stop_bot()})
+        if path == "/api/models":
+            if data.get("action") == "reset":
+                wanted = {kind: choices[0] for kind, choices in MODEL_CHOICES.items()}
+            else:
+                wanted = {kind: data.get(kind) for kind in MODEL_CHOICES}
+            result = change_models(wanted)
+            return _reply(dict(models_view(), ok=result["ok"], message=result["message"]))
+        if path == "/api/wish":
+            import wish_board
+            result = wish_board.admin_apply(str(data.get("action") or ""), data)
+            return _reply(dict(wish_board.admin_view(), ok=result["ok"], message=result["message"]))
+        if path == "/api/bomb":
+            import echo_bot
+            action = str(data.get("action") or "")
+            if action == "groups":
+                return _reply(echo_bot.control_bomb("groups", groups_text=str(data.get("groups") or "")))
+            if action == "ignore_paths":
+                return _reply(echo_bot.control_bomb(
+                    "ignore_paths", ignore_text=str(data.get("ignore_paths") or "")))
+            try:
+                minutes = int(data.get("minutes") or 30)
+                days = int(data.get("days") or 2)
+            except (TypeError, ValueError):
+                raise ValueError("间隔和天数要填整数。")
+            return _reply(echo_bot.control_bomb(action, minutes, days))
+        if path == "/api/review":
+            import echo_bot
+            action = str(data.get("action") or "")
+            if action == "groups":
+                result = echo_bot.control_review_groups(str(data.get("groups") or ""))
+                return _reply(dict(review_view(), ok=result["ok"], message=result["message"]))
+            if action == "run":
+                result = echo_bot.request_review_run(str(data.get("date") or ""))
+                return _reply(dict(review_view(), ok=result["ok"], message=result["message"]))
+            if action not in ("add", "remove"):
+                raise ValueError("不认识的操作。")
+            result = echo_bot.control_review_sub(action, str(data.get("name") or ""), str(data.get("git_author") or ""),
+                                                 str(data.get("open_id") or ""))
+            return _reply(dict(review_view(), ok=result["ok"], message=result["message"]))
+        if path == "/api/bilibili":
+            import echo_bot
+            action = str(data.get("action") or "")
+            if action in ("qr", "qr_poll"):
+                try:
+                    result = echo_bot.bilibili_qr_start() if action == "qr" else echo_bot.bilibili_qr_poll()
+                except Exception as error:
+                    result = {"ok": False, "state": "error", "message": f"连 B 站失败：{type(error).__name__}"}
+                return _reply(result)
+            view = echo_bot.control_bilibili_cookie(str(data.get("cookie") or ""))
+            return _reply({key: view.get(key) for key in ("set", "login", "uname", "message")})
+        if path == "/api/checkout":
+            import echo_bot
+            branch = str(data.get("branch") or "").strip()
+            if not branch:
+                raise ValueError("填要切到的分支名。")
+            view = echo_bot.control_checkout(branch)
+            with _status_lock:
+                _status_cache["at"] = 0.0
+                _status_cache["data"] = None
+            _branch_cache["at"] = 0.0
+            return _reply({"ok": bool(view.get("ok")), "branch": view.get("branch"), "message": view.get("message"), "file_branch": view.get("branch")})
+        if path == "/api/pull":
+            import echo_bot
+            hours = data.get("hours")
+            if isinstance(hours, bool) or not isinstance(hours, (int, float)) or (isinstance(hours, float) and not hours.is_integer()):
+                raise ValueError("间隔要填整数小时。")
+            view = echo_bot.control_pull_schedule(bool(data.get("enabled")), int(hours), bool(data.get("run_now")))
+            with _status_lock:
+                _status_cache["at"] = 0.0
+                _status_cache["data"] = None
+            if view.get("run_requested"):
+                message = "已交给大豆，马上拉。拉完会私聊朱辉，结果也显示在这里。"
+            elif view.get("enabled"):
+                message = f"已开启，每 {view.get('hours')} 小时拉一次。下次 {view.get('next_at')}。"
+            else:
+                message = "已关闭定时。"
+            if not bot_processes():
+                message += "大豆没在运行，启动后才会拉。"
+            return _reply({"ok": True, "pull": view, "message": message})
+        if path == "/api/watch":
+            import echo_bot
+            minutes = data.get("minutes")
+            if isinstance(minutes, bool) or not isinstance(minutes, (int, float)) or (isinstance(minutes, float) and not minutes.is_integer()):
+                raise ValueError("间隔要填整数分钟。")
+            days = data.get("days")
+            if isinstance(days, bool) or not isinstance(days, (int, float)) or (isinstance(days, float) and not days.is_integer()):
+                raise ValueError("天数要填整数。")
+            view = echo_bot.control_watch(bool(data.get("enabled")), int(minutes), str(data.get("rules") or ""), bool(data.get("run_now")), int(days))
+            with _status_lock:
+                _status_cache["at"] = 0.0
+                _status_cache["data"] = None
+            if view.get("run_requested"):
+                message = f"已交给大豆，马上查最近 {view.get('days')} 天。有改动会私聊朱辉，结果也显示在这里。"
+            elif view.get("enabled"):
+                message = f"已开启，看最近 {view.get('days')} 天，每 {view.get('minutes')} 分钟查一次。下次 {view.get('next_at')}。"
+            else:
+                message = "已关闭盯目录。"
+            if not bot_processes():
+                message += "大豆没在运行，启动后才会查。"
+            return _reply({"ok": True, "watch": view, "message": message})
+        if path == "/api/reminders/delete":
+            import echo_bot
+            item_id = str(data.get("id") or "")
+            if not echo_bot.delete_reminder(item_id):
+                return _reply({"error": "这条提醒不存在。"}, 400)
+            with _status_lock:
+                _status_cache["at"] = 0.0
+                _status_cache["data"] = None
+            return _reply({"ok": True})
+        if path == "/api/config":
+            root = str(data.get("project_root") or "").strip()
+            if not os.path.isdir(os.path.join(root, "Assets")):
+                return _reply({"error": "目录不存在，或下面没有 Assets。"}, 400)
+            branches = clean_branches(data.get("git_branches"))
+            update_config({"project_root": os.path.abspath(root), "git_branches": branches})
+            if data.get("restart"):
+                stop_bot()
+                time.sleep(1)
+                message = start_bot()
+                if message and message != "已经在运行。":
+                    return _reply({"error": message}, 400)
+            return _reply({"ok": True})
+        if path == "/api/preview":
+            text = str(data.get("text") or "").strip()
+            if not text:
+                return _reply({"error": "先写一句要试的话。"}, 400)
+            import echo_bot
+            echo_bot.apply_bot_config()
+            result = echo_bot.preview_question(text)
+            return _reply(result)
+        if path == "/api/index/rebuild":
+            with index_lock:
+                if index_state["running"]:
+                    return _reply({"error": "正在重建。"}, 400)
+            rebuild_index()
+            return _reply({"ok": True})
+        if path == "/api/misses/handled":
+            item_id = str(data.get("id") or "")
+            payload = read_json(HANDLED_PATH, {"ids": []})
+            ids = [str(item) for item in payload.get("ids") or []]
+            if item_id and item_id not in ids:
+                ids.append(item_id)
+            write_json(HANDLED_PATH, {"ids": ids[-500:]})
+            return _reply({"ok": True})
+        if path == "/api/notes/delete":
+            index = data.get("index")
+            items = load_notes()
+            if not isinstance(index, int) or not 0 <= index < len(items):
+                return _reply({"error": "这条纠正不存在。"}, 400)
+            del items[index]
+            write_json(NOTES_PATH, {"items": items})
+            return _reply({"ok": True})
+        if path == "/api/people/delete":
+            role = str(data.get("role") or "")
+            people = read_json(PEOPLE_PATH, {})
+            if not isinstance(people, dict) or role not in people:
+                return _reply({"error": "没有这个职务。"}, 400)
+            people.pop(role, None)
+            write_json(PEOPLE_PATH, people)
+            return _reply({"ok": True})
+    except ValueError as error:
+        return _reply({"error": str(error)}, 400)
+    return _reply({"error": "没有这个操作"}, 404)
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt: str, *args) -> None:
         return
@@ -1730,6 +2006,8 @@ class Handler(BaseHTTPRequestHandler):
             if self.user:
                 self.redirect(auth.safe_next(arg("next")))
                 return True
+            if BOARD_API:
+                return False  # 新前端的登录页，由 proxied 转发
             self.send_page(login_page(arg("next"), arg("error")))
             return True
         if method == "GET" and parsed.path == "/auth/feishu":
@@ -1772,6 +2050,8 @@ class Handler(BaseHTTPRequestHandler):
         if self.user:
             return False
         path = urlparse(self.path).path
+        if BOARD_API and board_route(path, BOARD_API["public"]):
+            return False  # 登录页、前端静态文件、登录页要读的接口，不用登录
         if method == "GET" and "/api/" not in path:
             self.redirect("/login?" + urlencode({"next": self.path}))
         else:
@@ -1786,7 +2066,7 @@ class Handler(BaseHTTPRequestHandler):
         if not BOARD_API:
             return False
         path = urlparse(self.path).path
-        if not any(path == prefix or path.startswith(prefix + "/") for prefix in BOARD_API["prefixes"]):
+        if not board_route(path, BOARD_API["routes"]) or board_route(path, BOARD_API["exclude"]):
             return False
         try:
             length = int(self.headers.get("Content-Length") or 0)
@@ -1874,9 +2154,6 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self.send_json({"error": "只有管理员能看。"}, 403)
             return
-        if path == "/api/users":
-            self.send_json({"items": __import__("auth").list_users()})
-            return
         if path in ("/", "/index.html"):
             body = PAGE.encode("utf-8")
             self.send_response(200)
@@ -1886,80 +2163,8 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
-        if path == "/api/review":
-            self.send_json(review_view())
-            return
-        if path == "/api/bomb":
-            import echo_bot
-            self.send_json(echo_bot.bomb_view())
-            return
-        if path == "/api/wish":
-            import wish_board
-            self.send_json(wish_board.admin_view())
-            return
-        if path == "/api/models":
-            self.send_json(models_view())
-            return
-        if path == "/api/bilibili":
-            import echo_bot
-            view = echo_bot.bilibili_login_status()
-            self.send_json({key: view.get(key) for key in ("set", "login", "uname", "message")})
-            return
-        if path == "/api/status":
-            now = time.time()
-            with _status_lock:
-                cached = _status_cache["data"]
-                if cached is not None and now - _status_cache["at"] < 15:
-                    self.send_json(cached)
-                    return
-                config = load_config()
-                full_log = read_log()
-                log = "\n".join(full_log.splitlines()[-30:])
-                info = index_info()
-                branch, dirty = file_branch(config["project_root"])
-                with index_lock:
-                    rebuilding = index_state["running"]
-                    index_error = index_state["error"]
-                data = {
-                    "running": bool(bot_processes()),
-                    "connected": connected(full_log),
-                    "running_root": running_root(full_log),
-                    "project_root": config["project_root"],
-                    "git_branches": config["git_branches"],
-                    "file_branch": branch,
-                    "dirty": dirty,
-                    "last_reply": last_reply(full_log),
-                    "index_exists": info["exists"],
-                    "index_rows": info["rows"],
-                    "index_time": info["time"],
-                    "index_running": rebuilding,
-                    "index_error": index_error,
-                    "log": log,
-                    "pull": pull_view(),
-                    "watch": watch_view(),
-                    "agents": agent_rows(),
-                    "reminders": reminder_rows(),
-                }
-                _status_cache["data"] = data
-                _status_cache["at"] = time.time()
-            self.send_json(data)
-            return
-        if path == "/api/reviews":
-            self.send_json({"items": load_reviews()})
-            return
-        if path == "/api/questions":
-            self.send_json({"items": load_questions()})
-            return
-        if path == "/api/misses":
-            self.send_json({"items": load_misses()})
-            return
-        if path == "/api/notes":
-            self.send_json({"items": load_notes()})
-            return
-        if path == "/api/people":
-            self.send_json({"items": load_people()})
-            return
-        self.send_json({"error": "没有这个页面"}, 404)
+        status, payload = admin_get(path, self.user)
+        self.send_json(payload, status)
 
     def do_POST(self) -> None:
         if self.gate("POST") or self.proxied("POST") or self.mounted("POST"):
@@ -1972,224 +2177,8 @@ class Handler(BaseHTTPRequestHandler):
         if not self.is_admin():
             self.send_json({"error": "只有管理员能改。"}, 403)
             return
-        data = self.read_body()
-        try:
-            if path == "/api/users":
-                import auth
-                action = str(data.get("action") or "")
-                key = str(data.get("open_id") or "")
-                try:
-                    if action in auth.ROLES:
-                        auth.set_role(key, action, by=self.user["open_id"])
-                    elif action == "remove":
-                        auth.remove_user(key, by=self.user["open_id"])
-                    else:
-                        raise ValueError("不认识的操作。")
-                except auth.AuthError as error:
-                    raise ValueError(str(error))
-                self.send_json({"ok": True, "items": auth.list_users()})
-                return
-            if path == "/api/start":
-                message = start_bot()
-                if message:
-                    self.send_json({"error": message}, 400)
-                else:
-                    self.send_json({"ok": True})
-                return
-            if path == "/api/stop":
-                self.send_json({"stopped": stop_bot()})
-                return
-            if path == "/api/models":
-                if data.get("action") == "reset":
-                    wanted = {kind: choices[0] for kind, choices in MODEL_CHOICES.items()}
-                else:
-                    wanted = {kind: data.get(kind) for kind in MODEL_CHOICES}
-                result = change_models(wanted)
-                self.send_json(dict(models_view(), ok=result["ok"], message=result["message"]))
-                return
-            if path == "/api/wish":
-                import wish_board
-                result = wish_board.admin_apply(str(data.get("action") or ""), data)
-                self.send_json(dict(wish_board.admin_view(), ok=result["ok"], message=result["message"]))
-                return
-            if path == "/api/bomb":
-                import echo_bot
-                action = str(data.get("action") or "")
-                if action == "groups":
-                    self.send_json(echo_bot.control_bomb("groups", groups_text=str(data.get("groups") or "")))
-                    return
-                if action == "ignore_paths":
-                    self.send_json(echo_bot.control_bomb(
-                        "ignore_paths", ignore_text=str(data.get("ignore_paths") or "")))
-                    return
-                try:
-                    minutes = int(data.get("minutes") or 30)
-                    days = int(data.get("days") or 2)
-                except (TypeError, ValueError):
-                    raise ValueError("间隔和天数要填整数。")
-                self.send_json(echo_bot.control_bomb(action, minutes, days))
-                return
-            if path == "/api/review":
-                import echo_bot
-                action = str(data.get("action") or "")
-                if action == "groups":
-                    result = echo_bot.control_review_groups(str(data.get("groups") or ""))
-                    self.send_json(dict(review_view(), ok=result["ok"], message=result["message"]))
-                    return
-                if action == "run":
-                    result = echo_bot.request_review_run(str(data.get("date") or ""))
-                    self.send_json(dict(review_view(), ok=result["ok"], message=result["message"]))
-                    return
-                if action not in ("add", "remove"):
-                    raise ValueError("不认识的操作。")
-                result = echo_bot.control_review_sub(action, str(data.get("name") or ""), str(data.get("git_author") or ""),
-                                                     str(data.get("open_id") or ""))
-                self.send_json(dict(review_view(), ok=result["ok"], message=result["message"]))
-                return
-            if path == "/api/bilibili":
-                import echo_bot
-                action = str(data.get("action") or "")
-                if action in ("qr", "qr_poll"):
-                    try:
-                        result = echo_bot.bilibili_qr_start() if action == "qr" else echo_bot.bilibili_qr_poll()
-                    except Exception as error:
-                        result = {"ok": False, "state": "error", "message": f"连 B 站失败：{type(error).__name__}"}
-                    self.send_json(result)
-                    return
-                view = echo_bot.control_bilibili_cookie(str(data.get("cookie") or ""))
-                self.send_json({key: view.get(key) for key in ("set", "login", "uname", "message")})
-                return
-            if path == "/api/checkout":
-                import echo_bot
-                branch = str(data.get("branch") or "").strip()
-                if not branch:
-                    raise ValueError("填要切到的分支名。")
-                view = echo_bot.control_checkout(branch)
-                with _status_lock:
-                    _status_cache["at"] = 0.0
-                    _status_cache["data"] = None
-                _branch_cache["at"] = 0.0
-                self.send_json({"ok": bool(view.get("ok")), "branch": view.get("branch"), "message": view.get("message"), "file_branch": view.get("branch")})
-                return
-            if path == "/api/pull":
-                import echo_bot
-                hours = data.get("hours")
-                if isinstance(hours, bool) or not isinstance(hours, (int, float)) or (isinstance(hours, float) and not hours.is_integer()):
-                    raise ValueError("间隔要填整数小时。")
-                view = echo_bot.control_pull_schedule(bool(data.get("enabled")), int(hours), bool(data.get("run_now")))
-                with _status_lock:
-                    _status_cache["at"] = 0.0
-                    _status_cache["data"] = None
-                if view.get("run_requested"):
-                    message = "已交给大豆，马上拉。拉完会私聊朱辉，结果也显示在这里。"
-                elif view.get("enabled"):
-                    message = f"已开启，每 {view.get('hours')} 小时拉一次。下次 {view.get('next_at')}。"
-                else:
-                    message = "已关闭定时。"
-                if not bot_processes():
-                    message += "大豆没在运行，启动后才会拉。"
-                self.send_json({"ok": True, "pull": view, "message": message})
-                return
-            if path == "/api/watch":
-                import echo_bot
-                minutes = data.get("minutes")
-                if isinstance(minutes, bool) or not isinstance(minutes, (int, float)) or (isinstance(minutes, float) and not minutes.is_integer()):
-                    raise ValueError("间隔要填整数分钟。")
-                days = data.get("days")
-                if isinstance(days, bool) or not isinstance(days, (int, float)) or (isinstance(days, float) and not days.is_integer()):
-                    raise ValueError("天数要填整数。")
-                view = echo_bot.control_watch(bool(data.get("enabled")), int(minutes), str(data.get("rules") or ""), bool(data.get("run_now")), int(days))
-                with _status_lock:
-                    _status_cache["at"] = 0.0
-                    _status_cache["data"] = None
-                if view.get("run_requested"):
-                    message = f"已交给大豆，马上查最近 {view.get('days')} 天。有改动会私聊朱辉，结果也显示在这里。"
-                elif view.get("enabled"):
-                    message = f"已开启，看最近 {view.get('days')} 天，每 {view.get('minutes')} 分钟查一次。下次 {view.get('next_at')}。"
-                else:
-                    message = "已关闭盯目录。"
-                if not bot_processes():
-                    message += "大豆没在运行，启动后才会查。"
-                self.send_json({"ok": True, "watch": view, "message": message})
-                return
-            if path == "/api/reminders/delete":
-                import echo_bot
-                item_id = str(data.get("id") or "")
-                if not echo_bot.delete_reminder(item_id):
-                    self.send_json({"error": "这条提醒不存在。"}, 400)
-                    return
-                with _status_lock:
-                    _status_cache["at"] = 0.0
-                    _status_cache["data"] = None
-                self.send_json({"ok": True})
-                return
-            if path == "/api/config":
-                root = str(data.get("project_root") or "").strip()
-                if not os.path.isdir(os.path.join(root, "Assets")):
-                    self.send_json({"error": "目录不存在，或下面没有 Assets。"}, 400)
-                    return
-                branches = clean_branches(data.get("git_branches"))
-                update_config({"project_root": os.path.abspath(root), "git_branches": branches})
-                if data.get("restart"):
-                    stop_bot()
-                    time.sleep(1)
-                    message = start_bot()
-                    if message and message != "已经在运行。":
-                        self.send_json({"error": message}, 400)
-                        return
-                self.send_json({"ok": True})
-                return
-            if path == "/api/preview":
-                text = str(data.get("text") or "").strip()
-                if not text:
-                    self.send_json({"error": "先写一句要试的话。"}, 400)
-                    return
-                import echo_bot
-                echo_bot.apply_bot_config()
-                result = echo_bot.preview_question(text)
-                self.send_json(result)
-                return
-            if path == "/api/index/rebuild":
-                with index_lock:
-                    if index_state["running"]:
-                        self.send_json({"error": "正在重建。"}, 400)
-                        return
-                rebuild_index()
-                self.send_json({"ok": True})
-                return
-            if path == "/api/misses/handled":
-                item_id = str(data.get("id") or "")
-                payload = read_json(HANDLED_PATH, {"ids": []})
-                ids = [str(item) for item in payload.get("ids") or []]
-                if item_id and item_id not in ids:
-                    ids.append(item_id)
-                write_json(HANDLED_PATH, {"ids": ids[-500:]})
-                self.send_json({"ok": True})
-                return
-            if path == "/api/notes/delete":
-                index = data.get("index")
-                items = load_notes()
-                if not isinstance(index, int) or not 0 <= index < len(items):
-                    self.send_json({"error": "这条纠正不存在。"}, 400)
-                    return
-                del items[index]
-                write_json(NOTES_PATH, {"items": items})
-                self.send_json({"ok": True})
-                return
-            if path == "/api/people/delete":
-                role = str(data.get("role") or "")
-                people = read_json(PEOPLE_PATH, {})
-                if not isinstance(people, dict) or role not in people:
-                    self.send_json({"error": "没有这个职务。"}, 400)
-                    return
-                people.pop(role, None)
-                write_json(PEOPLE_PATH, people)
-                self.send_json({"ok": True})
-                return
-        except ValueError as error:
-            self.send_json({"error": str(error)}, 400)
-            return
-        self.send_json({"error": "没有这个操作"}, 404)
+        status, payload = admin_post(path, self.read_body(), self.user)
+        self.send_json(payload, status)
 
 
 class QuietHTTPServer(ThreadingHTTPServer):
@@ -2273,16 +2262,17 @@ def start_board_api() -> None:
     """在后台线程里起新后端（FastAPI，127.0.0.1:8766）。缺依赖或前端没构建就不起，看板继续走旧页面。"""
     global BOARD_API
     try:
-        import server.app as board_app
+        import backend.app as board_app
     except ImportError as error:
-        print(f"新看板后端没起来，缺依赖（{error}）：python -m pip install -r requirements.txt。心愿墙先用旧页面。", flush=True)
+        print(f"新看板后端没起来，缺依赖（{error}）：python -m pip install -r requirements.txt。所有页面先用旧版。", flush=True)
         return
     if not os.path.exists(board_app.INDEX_HTML):
-        print("新看板前端没构建（web/dist 不存在）：cd web && npm install && npm run build。心愿墙先用旧页面。", flush=True)
+        print("新看板前端没构建（web/dist 不存在）：cd web && npm install && npm run build。所有页面先用旧版。", flush=True)
         return
     board_app.start_in_thread()
-    BOARD_API = {"port": board_app.PORT, "prefixes": board_app.PROXY_PREFIXES}
-    print(f"新看板后端 http://127.0.0.1:{board_app.PORT}（{'、'.join(board_app.SPA_PREFIXES)} 已迁移）", flush=True)
+    BOARD_API = {"port": board_app.PORT, "routes": board_app.PROXY_ROUTES, "exclude": board_app.PROXY_EXCLUDE,
+                 "public": board_app.PUBLIC_ROUTES}
+    print(f"新看板后端 http://127.0.0.1:{board_app.PORT}（后台、门户、登录和 {'、'.join(board_app.SPA_PREFIXES)} 都走新前端）", flush=True)
 
 
 def main() -> None:
@@ -2294,4 +2284,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    sys.modules.setdefault("console", sys.modules[__name__])  # 新后端 import console 时拿到同一份状态
     main()
