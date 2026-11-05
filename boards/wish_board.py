@@ -5,9 +5,9 @@ import os
 import re
 import threading
 import time
+from common.paths import DATA_DIR
 
-BOT_DIR = os.path.dirname(os.path.abspath(__file__))
-WISH_PATH = os.environ.get("WISH_PATH") or os.path.join(BOT_DIR, "wishes.json")  # 测试时可指到别的文件
+WISH_PATH = os.environ.get("WISH_PATH") or os.path.join(DATA_DIR, "wishes.json")  # 测试时可指到别的文件
 BEIJING_TZ = datetime.timezone(datetime.timedelta(hours=8))
 NAME_PATTERN = re.compile(r"^[A-Za-z0-9_.\-\u4e00-\u9fff]{1,20}$")
 TITLE_MIN = 2

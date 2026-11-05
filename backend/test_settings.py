@@ -9,9 +9,9 @@ from unittest import mock
 
 from fastapi.testclient import TestClient
 
-import auth
-import console
-import settings
+from common import auth
+from console import server as console
+from common import settings
 from backend.app import app
 
 KEYS = ("PROJECT_ROOT", "FEISHU_BOT_PROJECT_ROOT", "GIT_BRANCHES", "LLM_MODEL", "LLM_VISION_MODEL")
@@ -67,7 +67,7 @@ class SettingsTest(unittest.TestCase):
         status, payload = console.admin_post("/api/config", {"project_root": "/x"}, {"open_id": "ou_admin"})
         self.assertEqual(status, 400)
         self.assertIn(".env", payload["error"])
-        self.assertFalse(os.path.exists(os.path.join(console.BOT_DIR, "bot_config.json")))
+        self.assertFalse(os.path.exists(os.path.join(console.ROOT_DIR, "bot_config.json")))
 
 
 if __name__ == "__main__":

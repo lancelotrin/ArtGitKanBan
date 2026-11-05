@@ -19,10 +19,10 @@ import subprocess
 import threading
 import uuid
 
-from auth import env_value, read_env_file
+from common.auth import env_value, read_env_file
+from common.paths import DATA_DIR
 
-BOT_DIR = os.path.dirname(os.path.abspath(__file__))
-WORK_DIR = os.path.join(BOT_DIR, "_codex_work")
+WORK_DIR = os.path.join(DATA_DIR, "_codex_work")
 MAX_ANSWER_CHARS = 16000
 
 INTRO = ("你是飞书机器人的回答引擎。下面已经提供了回答所需的全部资料：不要执行任何命令，不要读取或修改文件，不要联网，"

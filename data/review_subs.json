@@ -1,0 +1,40 @@
+{
+  "subs": [
+    {
+      "name": "朱辉",
+      "git_author": "zhuhui",
+      "open_id": "ou_06be1825ee72540a17b25b1e4b713a03",
+      "dm": true
+    },
+    {
+      "name": "谷陶",
+      "git_author": "gutao",
+      "open_id": "ou_5aac3925ea7d232aa394e07c63bf2e13",
+      "dm": true
+    },
+    {
+      "name": "张海鹏",
+      "git_author": "zhanghaipeng",
+      "open_id": "ou_23324b8b7c0a9e91dbe46ae5ac956fae",
+      "dm": true
+    },
+    {
+      "name": "葛相麟",
+      "git_author": "gexianglin",
+      "open_id": "ou_084b811adc4815d25f480c8b1d4fdc3d",
+      "dm": true
+    },
+    {
+      "name": "徐浩然",
+      "git_author": "xuhaoran",
+      "open_id": "ou_321a1752168ccc9dd7d34bce4718cdef",
+      "dm": false
+    },
+    {
+      "name": "林轩",
+      "git_author": "linxuan",
+      "open_id": "ou_49ddd62628f875f0c5780e02c1467eb7",
+      "dm": false
+    }
+  ]
+}

@@ -13,10 +13,10 @@
 
 角色：user（普通）/ admin（管理员）。还没有管理员时，第一个登录的人自动成为管理员。
 命令行：
-  python auth.py list               列出登录过的人
-  python auth.py admin <名字或open_id>   设为管理员
-  python auth.py user <名字或open_id>    取消管理员
-  python auth.py departments        给登录过的人补查一遍部门
+  python -m common.auth list               列出登录过的人
+  python -m common.auth admin <名字或open_id>   设为管理员
+  python -m common.auth user <名字或open_id>    取消管理员
+  python -m common.auth departments        给登录过的人补查一遍部门
 """
 import hashlib
 import json
@@ -28,11 +28,10 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from common.paths import DATA_DIR, ENV_PATH
 
-BOT_DIR = os.path.dirname(os.path.abspath(__file__))
-ENV_PATH = os.path.join(BOT_DIR, ".env")
-USERS_PATH = os.path.join(BOT_DIR, "users.json")
-SESSIONS_PATH = os.path.join(BOT_DIR, "sessions.json")
+USERS_PATH = os.path.join(DATA_DIR, "users.json")
+SESSIONS_PATH = os.path.join(DATA_DIR, "sessions.json")
 COOKIE = "dadou_sid"
 STATE_COOKIE = "dadou_oauth"
 SESSION_DAYS = 180  # 用着就自动续期，半年不用才要重新登录

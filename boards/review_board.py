@@ -8,9 +8,9 @@ import html
 import json
 import os
 import re
+from common.paths import DATA_DIR
 
-BOT_DIR = os.path.dirname(os.path.abspath(__file__))
-REVIEW_DIR = os.path.join(BOT_DIR, "reviews")
+REVIEW_DIR = os.path.join(DATA_DIR, "reviews")
 DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 NAME_PATTERN = re.compile(r"^[A-Za-z0-9_.\-\u4e00-\u9fff]{1,40}$")
 FEISHU_LINK = re.compile(r"^https://project\.feishu\.cn/\w+/(story|issue)/detail/\d+$")

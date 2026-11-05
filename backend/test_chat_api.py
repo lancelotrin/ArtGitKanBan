@@ -12,7 +12,7 @@ from unittest import mock
 
 from fastapi.testclient import TestClient
 
-import auth
+from common import auth
 from backend import chat_store, llm
 from backend.app import app
 from backend.routers import chat as chat_router
@@ -38,7 +38,7 @@ class ChatApiTest(unittest.TestCase):
         self.a = self.client("ou_a")
         self.admin = self.client("ou_admin")
         self.patches = [mock.patch.object(llm, "settings", return_value=dict(KEY)),
-                        mock.patch("echo_bot.now_text", return_value="2026年11月05日"),
+                        mock.patch("bot.echo_bot.now_text", return_value="2026年11月05日"),
                         mock.patch.object(chat_router, "wiki_context", return_value="")]
         for patch in self.patches:
             patch.start()
@@ -175,7 +175,7 @@ class WikiContextTest(unittest.TestCase):
             self.assertEqual([d["objToken"] for d in found["docs"]][:1], ["T1"])
             self.assertIn("《美术组 / UI 管线 / UI制作流程规范》 https://x/wiki/T1", found["context"])
             with mock.patch.object(chat_router.wiki_kb, "WIKI_DIR", root), \
-                    mock.patch("echo_bot.now_text", return_value="今天"):
+                    mock.patch("bot.echo_bot.now_text", return_value="今天"):
                 # 短追问连上一个问题一起搜
                 messages = chat_router.context([
                     {"role": "user", "content": "伙伴合击冷却多久", "status": "ok"},
@@ -194,7 +194,7 @@ class ContextWeightTest(unittest.TestCase):
         return history + [{"role": "user", "content": "当前问题", "status": "ok"}]
 
     def context(self, messages: list) -> list:
-        with mock.patch("echo_bot.now_text", return_value="今天"), \
+        with mock.patch("bot.echo_bot.now_text", return_value="今天"), \
                 mock.patch.object(chat_router, "wiki_context", return_value=""):
             return chat_router.context(messages)
 
@@ -225,7 +225,7 @@ class ContextWeightTest(unittest.TestCase):
         self.assertLessEqual(sum(len(m["content"]) for m in got[2:]), chat_router.RECENT_CHARS + 100)
 
     def test_asker_and_department_in_prompt(self) -> None:
-        with mock.patch("echo_bot.now_text", return_value="今天"), \
+        with mock.patch("bot.echo_bot.now_text", return_value="今天"), \
                 mock.patch.object(chat_router, "wiki_context", return_value=""):
             got = chat_router.context(self.build(0), {"name": "小林", "department": "美术组"})
             plain = chat_router.context(self.build(0), {"name": "小林"})
@@ -257,7 +257,7 @@ class CodexChatTest(unittest.TestCase):
         env = {"FEISHU_APP_SECRET": "s3cr3t-value", "PROJECT_ROOT": "/proj"}
         with mock.patch.object(llm, "settings", return_value=dict(self.CONFIG)), mock.patch.object(llm, "note"), \
                 mock.patch.object(llm, "project", return_value=("/proj", ["main"])), \
-                mock.patch("auth.read_env_file", return_value=env), \
+                mock.patch("common.auth.read_env_file", return_value=env), \
                 mock.patch.object(llm.codex_cli, "ask", return_value=("密钥是 s3cr3t-value", {})) as ask:
             items = list(llm.stream_chat([{"role": "user", "content": "hi"}]))
         self.assertEqual(ask.call_args.kwargs, {"project_dir": "/proj", "branches": ["main"],

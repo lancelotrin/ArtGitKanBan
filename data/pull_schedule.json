@@ -3,8 +3,8 @@
   "interval_sec": 18000,
   "chat_id": "oc_87199fa15e8bc352fb9c928332d8528e",
   "sender": "ou_c37360dac36cf63d325710343fc960c7",
-  "next_at": "2026-11-04T15:13:46+08:00",
-  "revision": 9,
+  "next_at": "2026-11-06T01:12:53+08:00",
+  "revision": 11,
   "run_requested": false,
   "last_result": "已清掉 2 个本地修改。\n`main` 已经是最新，`2b68a8e`。",
   "last_at": "2026-11-05T16:36:06+08:00"

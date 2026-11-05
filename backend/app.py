@@ -1,10 +1,9 @@
 """FastAPI 入口：/api/v1/* 是 JSON 接口；页面路径都返回 React 构建出的 index.html。
 
-console.py 仍是对外的门（80，飞书登录回调和退出在那里），它按下面的路由表把请求转发到这里（只听 127.0.0.1）。
+console/（python -m console）仍是对外的门（80，飞书登录回调和退出在那里），它按下面的路由表把请求转发到这里（只听 127.0.0.1）。
 单独调试：.venv/bin/python -m backend
 """
 import os
-import sys
 import threading
 from urllib.parse import urlencode
 
@@ -15,11 +14,7 @@ from fastapi.staticfiles import StaticFiles
 
 from backend.deps import ROOT_DIR, auth
 
-if "console" not in sys.modules and "__main__" in sys.modules and \
-        getattr(sys.modules["__main__"], "__file__", "").endswith("console.py"):
-    sys.modules["console"] = sys.modules["__main__"]  # 被 console.py 带起来时共用同一份状态
-
-from backend.routers import admin, bomb, chat, core, help, merge, review, wish  # noqa: E402
+from backend.routers import admin, bomb, chat, core, help, merge, review, wish
 
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("BOARD_API_PORT", "8766"))
@@ -31,7 +26,7 @@ SPA_ROUTES = ("=/", "=/index.html", "=/login", "/wish", "/bomb", "/review", "/me
 PUBLIC_PAGES = ("=/login",)
 SPA_PREFIXES = tuple(rule for rule in SPA_ROUTES if not rule.startswith("="))
 PROXY_ROUTES = SPA_ROUTES + ("/api/v1", "/static")
-# 单个合并会话的评审页是 MergeReviewPortable 自带的页面，继续由 console.py 里的 merge_web 处理。
+# 单个合并会话的评审页是 MergeReviewPortable 自带的页面，继续由 console/server.py 里的 merge_web 处理。
 PROXY_EXCLUDE = ("/merge/s/",)
 # 不用登录就能访问的：登录页、前端静态文件、登录页要读的接口。
 PUBLIC_ROUTES = PUBLIC_PAGES + ("/static", "/api/v1/auth")
@@ -88,7 +83,7 @@ for _rule in SPA_ROUTES:
 
 
 def start_in_thread() -> None:
-    """console.py 调用：在后台线程里起 uvicorn，只听本机。"""
+    """console/server.py 调用：在后台线程里起 uvicorn，只听本机。"""
     import uvicorn
     server = uvicorn.Server(uvicorn.Config(app, host=HOST, port=PORT, log_level="warning", access_log=False,
                                            proxy_headers=False))

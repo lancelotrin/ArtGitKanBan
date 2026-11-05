@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router";
-import { ActionButton, adminPost, useAdmin, useSynced } from "./common";
+import { ActionButton, adminPost, useAdmin, useRefreshAdmin, useSynced } from "./common";
 import type { ReviewAdmin } from "./types";
 
 function yesterday(): string {
@@ -16,6 +16,8 @@ export default function ReviewTab() {
   const [message, setMessage] = useState<{ text: string; bad?: boolean }>({ text: "" });
   const [groups, setGroups, resetGroups] = useSynced(data?.groups?.join("\n"), "");
   const [groupsMsg, setGroupsMsg] = useState<{ text: string; bad?: boolean }>({ text: "" });
+  const [toggling, setToggling] = useState("");
+  const refresh = useRefreshAdmin();
 
   // 失败时把消息写到对应的提示行，再抛出去让按钮弹错误。
   const withMessage = (set: typeof setMessage, work: () => Promise<ReviewAdmin>) => async () => {
@@ -36,6 +38,21 @@ export default function ReviewTab() {
     return result;
   });
 
+  // 勾上/取消私聊：勾上时后端按姓名找 open_id，找不到会报错、不勾。
+  const toggleDm = async (gitAuthor: string, on: boolean) => {
+    setToggling(gitAuthor);
+    setMessage({ text: on ? "正在按姓名找飞书账号…" : "" });
+    try {
+      const result = await adminPost<ReviewAdmin>("review", { action: "dm", git_author: gitAuthor, on });
+      setMessage({ text: result.message || "" });
+    } catch (error) {
+      setMessage({ text: (error as Error).message, bad: true });
+    } finally {
+      setToggling("");
+      refresh();
+    }
+  };
+
   const state = data?.state;
   return (
     <section id="sec-review">
@@ -43,7 +60,7 @@ export default function ReviewTab() {
       <p className="meta">
         每天 0 点复盘名单里每个人前一天在 main 和 CBT2_bugfix 上的提交，结果放在内网网页{" "}
         <Link to="/review/">{data?.web || "/review/"}</Link>
-        （只读，打开就能看所有人）。姓名填飞书里的名字，大豆会在它所在的群里按姓名找到这个人并私聊摘要；找不到的只出网页，之后进了群会自动补上。git 作者名要和提交里的一致。
+        （只读，打开就能看所有人）。勾上「私聊」的人每天还会收到私聊摘要：大豆按飞书姓名在它所在的群里找这个人，所以姓名要和飞书里一致。git 作者名要和提交里的一致。
       </p>
       <div>
         {!data ? "正在读取…" : (
@@ -57,7 +74,13 @@ export default function ReviewTab() {
         <tbody>
           {(data?.subs || []).length ? data!.subs.map((item) => (
             <tr key={item.git_author}>
-              <td>{item.name}</td><td>{item.git_author}</td><td>{item.open_id ? "会私聊" : "只出网页"}</td>
+              <td>{item.name}</td><td>{item.git_author}</td><td>
+                <label style={{ display: "inline-flex", alignItems: "center", gap: 4, margin: 0, cursor: "pointer" }}>
+                  <input type="checkbox" checked={!!item.dm} disabled={toggling === item.git_author}
+                    onChange={(e) => toggleDm(item.git_author, e.target.checked)} />
+                  {toggling === item.git_author ? "处理中…" : item.dm ? "会私聊" : "只出网页"}
+                </label>
+              </td>
               <td><ActionButton label="移除" done="已移除" run={withMessage(setMessage, () => adminPost<ReviewAdmin>("review", { action: "remove", git_author: item.git_author }))} /></td>
             </tr>
           )) : <tr><td colSpan={4} className="meta">名单是空的</td></tr>}

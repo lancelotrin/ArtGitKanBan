@@ -1,4 +1,4 @@
-// 后台接口返回的数据形状（只列页面用到的字段），对应 console.py 里各 *_view / load_* 函数。
+// 后台接口返回的数据形状（只列页面用到的字段），对应 console/server.py 里各 *_view / load_* 函数。
 
 export interface PullState { enabled: boolean; hours: number; next_at: string; run_requested: boolean; last_at: string; last_result: string }
 export interface WatchState extends Omit<PullState, "hours"> { days: number; minutes: number; rules_text: string }
@@ -32,7 +32,7 @@ export interface Note { question: string; fact: string }
 export interface Person { role: string; name: string }
 
 export interface ReviewAdmin {
-  subs: { name: string; git_author: string; open_id: string }[];
+  subs: { name: string; git_author: string; open_id: string; dm?: boolean }[];
   state: { last_at?: string; last_result?: string; run_requested?: string };
   web: string;
   groups: string[];

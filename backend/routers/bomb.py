@@ -1,8 +1,8 @@
 """炸线看板 API（只读）。数据在 bomb_board.py，由大豆的炸线扫描写入。"""
 from fastapi import APIRouter, Depends
 
-import bomb
-import bomb_board
+from bot import bomb
+from boards import bomb_board
 from backend.deps import current_user
 
 router = APIRouter(tags=["炸线看板"])

@@ -1,5 +1,6 @@
 $ErrorActionPreference = "Stop"
-$botDir = $PSScriptRoot
+# 脚本在 bot/ 下，在项目根目录用 python -m bot 启动
+$botDir = Split-Path -Parent $PSScriptRoot
 Set-Location $botDir
 $host.UI.RawUI.WindowTitle = "FeishuBot"
 $env:PYTHONIOENCODING = "utf-8"
@@ -23,7 +24,7 @@ $lock = Join-Path $profileRoot ".lark-cli\locks\subscribe_cli_a964587c1d781bd4.l
 Get-Process python,node -ErrorAction SilentlyContinue | ForEach-Object {
     try {
         $cmd = (Get-CimInstance Win32_Process -Filter "ProcessId=$($_.Id)" -ErrorAction SilentlyContinue).CommandLine
-        if ($cmd -and ($cmd -match "echo_bot\.py" -or $cmd -match "event \+subscribe")) {
+        if ($cmd -and ($cmd -match "echo_bot\.py" -or $cmd -match "-m bot(\s|$)" -or $cmd -match "event \+subscribe")) {
             Write-Host "stop pid=$($_.Id)"
             Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
         }
@@ -32,17 +33,18 @@ Get-Process python,node -ErrorAction SilentlyContinue | ForEach-Object {
 Start-Sleep -Seconds 1
 if (Test-Path $lock) { Remove-Item $lock -Force -ErrorAction SilentlyContinue }
 
-$logPath = Join-Path $botDir "bot.log"
-$errPath = Join-Path $botDir "bot.err.log"
+$dataDir = Join-Path $botDir "data"
+New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
+$logPath = Join-Path $dataDir "bot.log"
+$errPath = Join-Path $dataDir "bot.err.log"
 $python = (Get-Command python).Source
 if ($python -like "*WindowsApps*") {
     $realPython = "C:\Users\Administrator\AppData\Local\Programs\Python\Python314\python.exe"
     if (Test-Path $realPython) { $python = $realPython }
 }
-$script = Join-Path $botDir "echo_bot.py"
-Write-Host "starting $python -u $script"
+Write-Host "starting $python -u -m bot"
 # 不用 Tee 管道：管道断开时 python 会被一起干掉，窗口却还在
-$proc = Start-Process -FilePath $python -ArgumentList @("-u", $script) -WorkingDirectory $botDir -RedirectStandardOutput $logPath -RedirectStandardError $errPath -PassThru -NoNewWindow
+$proc = Start-Process -FilePath $python -ArgumentList @("-u", "-m", "bot") -WorkingDirectory $botDir -RedirectStandardOutput $logPath -RedirectStandardError $errPath -PassThru -NoNewWindow
 Write-Host "echo_bot pid=$($proc.Id) log=$logPath"
 Write-Host "等待 Connected...（本窗口可关；进程已在后台）"
 Start-Sleep -Seconds 8

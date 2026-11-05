@@ -10,11 +10,11 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-import auth
-import bomb_board
-import console
-import merge_web
-import review_board
+from common import auth
+from boards import bomb_board
+from console import server as console
+from boards import merge_web
+from boards import review_board
 from backend import app as board_app
 from backend.app import app
 

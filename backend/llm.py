@@ -17,8 +17,8 @@ import urllib.error
 import urllib.request
 from typing import Iterator, List
 
-import codex_cli
-import wiki_kb
+from common import codex_cli
+from common import wiki_kb
 
 TIMEOUT = 120
 BOX_TOKENS = re.compile(r"<\|(begin|end)_of_box\|>")
@@ -29,8 +29,8 @@ class LLMError(Exception):
 
 
 def settings() -> dict:
-    import console
-    import echo_bot
+    from console import server as console
+    from bot import echo_bot
     codex = echo_bot.USE_CODEX
     return {"api_key": echo_bot.LLM_API_KEY, "base_url": echo_bot.LLM_BASE_URL,
             "model": codex_cli.label() if codex else console.load_models()["chat"],
@@ -43,8 +43,8 @@ def enabled(config: dict) -> bool:
 
 
 def note(model: str, ok: bool, error: str = "", prompt_tokens: int = 0, completion_tokens: int = 0) -> None:
-    import echo_bot
-    import model_stats
+    from bot import echo_bot
+    from common import model_stats
     model_stats.note(model, ok, echo_bot.redact(error) if error else "", prompt_tokens=prompt_tokens,
                      completion_tokens=completion_tokens)
 
@@ -95,7 +95,7 @@ SECRET_NAMES = re.compile(r"(SECRET|KEY|TOKEN|PASSWORD|COOKIE)", re.I)
 
 def mask_secrets(text: str) -> str:
     """Codex 的只读沙箱不限制读，万一它把 .env 里的密钥读出来写进回答，这里换掉。"""
-    from auth import read_env_file
+    from common.auth import read_env_file
     for name, value in read_env_file().items():
         if value and len(value) >= 6 and SECRET_NAMES.search(name) and value in text:
             text = text.replace(value, f"<{name} 已隐藏>")
@@ -103,7 +103,7 @@ def mask_secrets(text: str) -> str:
 
 
 def project() -> tuple:
-    import settings as bot_settings
+    from common import settings as bot_settings
     values = bot_settings.read_env_file()
     return bot_settings.project_root(values), bot_settings.git_branches(values)
 

@@ -4,8 +4,9 @@ import random
 import re
 import shutil
 from pathlib import Path
+from common.paths import DATA_DIR
 
-STICKER_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stickers")
+STICKER_DIR = os.path.join(DATA_DIR, "stickers")
 STICKER_DIR_REL = "stickers"
 STICKER_SUFFIXES = (".gif", ".png", ".jpg", ".jpeg", ".webp")
 STICKER_MAX_BYTES = 10 * 1024 * 1024

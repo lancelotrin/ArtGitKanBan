@@ -1,7 +1,7 @@
 """合并确认：会话和本地工程的逻辑，以及 /merge/s/<会话>/ 评审页的转发。
 
 - 会话列表、上传、本地工程（检查 / 采集 / 增删）：逻辑在这里，接口在 backend/routers/merge.py，页面在 web/。
-- /merge/s/<会话>/：单个会话的评审页是 MergeReviewPortable 自带的页面和接口，console.py 把请求交给 MergeHandler。
+- /merge/s/<会话>/：单个会话的评审页是 MergeReviewPortable 自带的页面和接口，console/server.py 把请求交给 MergeHandler。
 
 只读 Git：capture 只读取冲突索引，不改仓库；apply / finish 仍用命令行在仓库那台机器上做。
 """
@@ -19,17 +19,17 @@ from datetime import datetime
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse
+from common.paths import DATA_DIR, ROOT_DIR
 
-BOT_DIR = os.path.dirname(os.path.abspath(__file__))
-TOOL_DIR = os.path.join(BOT_DIR, "MergeReviewPortable")
+TOOL_DIR = os.path.join(ROOT_DIR, "MergeReviewPortable")
 if TOOL_DIR not in sys.path:
     sys.path.insert(0, TOOL_DIR)
 import merge_review  # noqa: E402
 import server as review_server  # noqa: E402
 
 SESSIONS_DIR = Path(TOOL_DIR) / "sessions"
-PROJECTS_PATH = os.path.join(BOT_DIR, "merge_projects.json")
-OPEN_PATH = os.path.join(BOT_DIR, "merge_open.json")  # 管理员开放给普通用户的会话；没列进来的普通用户看不到
+PROJECTS_PATH = os.path.join(DATA_DIR, "merge_projects.json")
+OPEN_PATH = os.path.join(DATA_DIR, "merge_open.json")  # 管理员开放给普通用户的会话；没列进来的普通用户看不到
 SESSION_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\-]{0,80}$")
 MAX_UPLOAD = 300 * 1024 * 1024
 
@@ -249,7 +249,7 @@ def _store_session(snapshot: dict, members: dict, archive, raw_snapshot: bytes =
 # ---------- /merge/s/<会话>/ 转发 ----------
 
 class MergeHandler(BaseHTTPRequestHandler):
-    """console.py 换类进来时 self.path 已去掉 /merge 前缀，只处理 /s/<会话>/...。"""
+    """console/server.py 换类进来时 self.path 已去掉 /merge 前缀，只处理 /s/<会话>/...。"""
 
     def log_message(self, fmt, *args) -> None:
         return

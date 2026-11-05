@@ -19,7 +19,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-import wiki_kb
+from common import wiki_kb
 from backend import chat_store, llm
 from backend.deps import current_user, same_origin
 
@@ -138,7 +138,7 @@ def context(messages: List[dict], user: Optional[dict] = None) -> List[dict]:
     2. 最近 RECENT_TURNS 轮：原样带上（超长的回答保留头尾），总字数超了就少带几轮；
     3. 更早的对话：压缩成摘要行放进系统提示，注明仅供参考。
     出错的回答不算。"""
-    import echo_bot
+    from bot import echo_bot
     usable = [{"role": m["role"], "content": m["content"]} for m in messages
               if m["status"] != "error" and m["content"].strip()][-MAX_MESSAGES:]
     turns = split_turns(usable)

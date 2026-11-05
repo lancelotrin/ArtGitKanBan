@@ -1,9 +1,10 @@
 """大豆后台。只监听本机 127.0.0.1:80，不对外网开放。
 
-启动：python D:\\FeishuBot\\console.py
+启动：在项目根目录 python -m console（或 ./restart.sh）
 浏览器打开 http://127.0.0.1
 """
 import http.client
+import importlib
 import json
 import os
 import re
@@ -19,24 +20,24 @@ except ImportError:  # 非 Windows
     winreg = None
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlencode, urlparse
+from common.paths import DATA_DIR, ROOT_DIR, migrate_legacy_data
 
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-BOT_DIR = os.path.dirname(os.path.abspath(__file__))
-LOG_PATH = os.path.join(BOT_DIR, "bot.log")
-ERR_PATH = os.path.join(BOT_DIR, "bot.err.log")
-MISSES_PATH = os.path.join(BOT_DIR, "misses.jsonl")
-QUESTIONS_PATH = os.path.join(BOT_DIR, "questions.jsonl")
-HANDLED_PATH = os.path.join(BOT_DIR, "misses_handled.json")
-NOTES_PATH = os.path.join(BOT_DIR, "notes.json")
-REVIEWS_PATH = os.path.join(BOT_DIR, "reviews.json")
-PEOPLE_PATH = os.path.join(BOT_DIR, "people.json")
-REF_INDEX_PATH = os.path.join(BOT_DIR, "ref_index.sqlite")
+LOG_PATH = os.path.join(DATA_DIR, "bot.log")
+ERR_PATH = os.path.join(DATA_DIR, "bot.err.log")
+MISSES_PATH = os.path.join(DATA_DIR, "misses.jsonl")
+QUESTIONS_PATH = os.path.join(DATA_DIR, "questions.jsonl")
+HANDLED_PATH = os.path.join(DATA_DIR, "misses_handled.json")
+NOTES_PATH = os.path.join(DATA_DIR, "notes.json")
+REVIEWS_PATH = os.path.join(DATA_DIR, "reviews.json")
+PEOPLE_PATH = os.path.join(DATA_DIR, "people.json")
+REF_INDEX_PATH = os.path.join(DATA_DIR, "ref_index.sqlite")
 PYTHON = r"C:\Users\Administrator\AppData\Local\Programs\Python\Python314\python.exe"
 HOST = os.environ.get("CONSOLE_HOST", "127.0.0.1")
 PORT = int(os.environ.get("CONSOLE_PORT", "80"))
-# 页面和接口都在新后端（backend/ FastAPI + web/ React），console.py 只管飞书登录、退出，再按路由表转发。
+# 页面和接口都在新后端（backend/ FastAPI + web/ React），console/server.py 只管飞书登录、退出，再按路由表转发。
 # 唯一的例外：单个合并会话的评审页 /merge/s/<会话>/ 是 MergeReviewPortable 自带的页面，由 merge_web 处理。
-MOUNTS = {"/merge": "merge_web"}
+MOUNTS = {"/merge": "boards.merge_web"}
 BOARD_API = None  # start_board_api() 起好新后端后填上端口和路由表
 def board_route(path: str, rules: tuple) -> bool:
     """rules 里以 / 结尾的是前缀（"/merge/s/"），"=/" 这种是整条路径，其它是前缀且含自身（"/wish" 管 /wish 和 /wish/...）。"""
@@ -76,24 +77,24 @@ def write_json(path: str, payload) -> None:
 
 
 def load_config() -> dict:
-    import settings
+    from common import settings
     return {"project_root": settings.project_root(), "git_branches": settings.git_branches()}
 
 
 def load_models() -> dict:
-    import settings
+    from common import settings
     return settings.models()
 
 
 def bot_models_env() -> dict:
-    import settings
+    from common import settings
     return {settings.MODEL_ENV[kind]: name for kind, name in load_models().items()}
 
 
 def apply_models_here() -> None:
     """后台进程自己的试跑、补跑也用同一对模型；只改本进程。"""
     os.environ.update(bot_models_env())
-    loaded = sys.modules.get("echo_bot")
+    loaded = sys.modules.get("bot.echo_bot")
     if loaded is not None:
         current = load_models()
         loaded.LLM_MODEL = current["chat"]
@@ -101,15 +102,15 @@ def apply_models_here() -> None:
 
 
 def models_view() -> dict:
-    import model_stats
-    import settings
+    from common import model_stats
+    from common import settings
     return dict(model_stats.view(), current=load_models(),
                 defaults={kind: choices[0] for kind, choices in settings.MODEL_CHOICES.items()},
                 env=settings.MODEL_ENV, note=ENV_ONLY)
 
 
 def watch_view() -> dict:
-    saved = read_json(os.path.join(BOT_DIR, "watch.json"), {})
+    saved = read_json(os.path.join(DATA_DIR, "watch.json"), {})
     if not isinstance(saved, dict) or not saved:
         return {
             "enabled": False,
@@ -144,7 +145,7 @@ def watch_view() -> dict:
 
 
 def pull_view() -> dict:
-    saved = read_json(os.path.join(BOT_DIR, "pull_schedule.json"), {})
+    saved = read_json(os.path.join(DATA_DIR, "pull_schedule.json"), {})
     if not isinstance(saved, dict):
         saved = {}
     interval = int(saved.get("interval_sec") or 0)
@@ -160,7 +161,7 @@ def pull_view() -> dict:
 
 
 def agent_rows() -> list:
-    saved = read_json(os.path.join(BOT_DIR, "agents.json"), {})
+    saved = read_json(os.path.join(DATA_DIR, "agents.json"), {})
     items = saved.get("items") if isinstance(saved, dict) else []
     rows = []
     for item in items or []:
@@ -177,7 +178,7 @@ def agent_rows() -> list:
 
 
 def reminder_rows() -> list:
-    saved = read_json(os.path.join(BOT_DIR, "reminders.json"), {})
+    saved = read_json(os.path.join(DATA_DIR, "reminders.json"), {})
     items = saved.get("items") if isinstance(saved, dict) else []
     rows = []
     for item in items or []:
@@ -193,6 +194,13 @@ def reminder_rows() -> list:
     return rows
 
 
+BOT_COMMAND = re.compile(r"echo_bot\.py|-m bot(\s|$)|event \+subscribe")  # 认旧的 echo_bot.py 启动方式，方便停掉
+
+
+def is_bot_command(line: str) -> bool:
+    return bool(BOT_COMMAND.search(line))
+
+
 def bot_processes() -> list:
     if sys.platform != "win32":
         try:
@@ -200,7 +208,7 @@ def bot_processes() -> list:
         except (OSError, subprocess.TimeoutExpired, subprocess.CalledProcessError):
             return []
         return [int(line.split(None, 1)[0]) for line in output.splitlines()
-                if ("echo_bot.py" in line or "event +subscribe" in line) and line.split(None, 1)[0].isdigit()]
+                if is_bot_command(line) and line.split(None, 1)[0].isdigit()]
     script = (
         "Get-Process python,node -ErrorAction SilentlyContinue | ForEach-Object { "
         "$cmd = (Get-CimInstance Win32_Process -Filter ('ProcessId=' + $_.Id)).CommandLine; "
@@ -215,7 +223,7 @@ def bot_processes() -> list:
         return []
     found = []
     for line in output.splitlines():
-        if "echo_bot.py" in line or "event +subscribe" in line:
+        if is_bot_command(line):
             pid_text = line.split("|", 1)[0].strip()
             if pid_text.isdigit():
                 found.append(int(pid_text))
@@ -262,8 +270,8 @@ def start_bot() -> str:
     out = open(LOG_PATH, "w", encoding="utf-8")
     err = open(ERR_PATH, "w", encoding="utf-8")
     proc = subprocess.Popen(
-        [python, "-u", os.path.join(BOT_DIR, "echo_bot.py")],
-        cwd=BOT_DIR, env=env, stdout=out, stderr=err, creationflags=NO_WINDOW,
+        [python, "-u", "-m", "bot"],
+        cwd=ROOT_DIR, env=env, stdout=out, stderr=err, creationflags=NO_WINDOW,
     )
     out.close()
     err.close()
@@ -464,7 +472,7 @@ def rebuild_index() -> None:
 
     def work():
         try:
-            import echo_bot
+            from bot import echo_bot
             echo_bot.apply_bot_config()
             rows = echo_bot.build_ref_index()
             with index_lock:
@@ -488,19 +496,19 @@ def _reply(payload, status: int = 200) -> tuple:
 def admin_get(path: str, user: dict) -> tuple:
     """管理员的读接口，返回 (状态码, JSON)。新后端 /api/v1/admin/* 调它。"""
     if path == "/api/users":
-        return _reply({"items": __import__("auth").list_users()})
+        return _reply({"items": importlib.import_module("common.auth").list_users()})
     if path == "/api/review":
         return _reply(review_view())
     if path == "/api/bomb":
-        import echo_bot
+        from bot import echo_bot
         return _reply(echo_bot.bomb_view())
     if path == "/api/wish":
-        import wish_board
+        from boards import wish_board
         return _reply(wish_board.admin_view())
     if path == "/api/models":
         return _reply(models_view())
     if path == "/api/bilibili":
-        import echo_bot
+        from bot import echo_bot
         view = echo_bot.bilibili_login_status()
         return _reply({key: view.get(key) for key in ("set", "login", "uname", "message")})
     if path == "/api/status":
@@ -557,7 +565,7 @@ def admin_post(path: str, data: dict, user: dict) -> tuple:
     """管理员的写接口，返回 (状态码, JSON)。调用方负责登录、管理员和跨站检查。"""
     try:
         if path == "/api/users":
-            import auth
+            from common import auth
             action = str(data.get("action") or "")
             key = str(data.get("open_id") or "")
             try:
@@ -581,11 +589,11 @@ def admin_post(path: str, data: dict, user: dict) -> tuple:
         if path in ("/api/models", "/api/config"):
             return _reply({"error": ENV_ONLY}, 400)
         if path == "/api/wish":
-            import wish_board
+            from boards import wish_board
             result = wish_board.admin_apply(str(data.get("action") or ""), data)
             return _reply(dict(wish_board.admin_view(), ok=result["ok"], message=result["message"]))
         if path == "/api/bomb":
-            import echo_bot
+            from bot import echo_bot
             action = str(data.get("action") or "")
             if action == "groups":
                 return _reply(echo_bot.control_bomb("groups", groups_text=str(data.get("groups") or "")))
@@ -599,7 +607,7 @@ def admin_post(path: str, data: dict, user: dict) -> tuple:
                 raise ValueError("间隔和天数要填整数。")
             return _reply(echo_bot.control_bomb(action, minutes, days))
         if path == "/api/review":
-            import echo_bot
+            from bot import echo_bot
             action = str(data.get("action") or "")
             if action == "groups":
                 result = echo_bot.control_review_groups(str(data.get("groups") or ""))
@@ -607,13 +615,16 @@ def admin_post(path: str, data: dict, user: dict) -> tuple:
             if action == "run":
                 result = echo_bot.request_review_run(str(data.get("date") or ""))
                 return _reply(dict(review_view(), ok=result["ok"], message=result["message"]))
+            if action == "dm":
+                result = echo_bot.control_review_dm(str(data.get("git_author") or ""), bool(data.get("on")))
+                return _reply(dict(review_view(), ok=result["ok"], message=result["message"]))
             if action not in ("add", "remove"):
                 raise ValueError("不认识的操作。")
             result = echo_bot.control_review_sub(action, str(data.get("name") or ""), str(data.get("git_author") or ""),
                                                  str(data.get("open_id") or ""))
             return _reply(dict(review_view(), ok=result["ok"], message=result["message"]))
         if path == "/api/bilibili":
-            import echo_bot
+            from bot import echo_bot
             action = str(data.get("action") or "")
             if action in ("qr", "qr_poll"):
                 try:
@@ -624,7 +635,7 @@ def admin_post(path: str, data: dict, user: dict) -> tuple:
             view = echo_bot.control_bilibili_cookie(str(data.get("cookie") or ""))
             return _reply({key: view.get(key) for key in ("set", "login", "uname", "message")})
         if path == "/api/checkout":
-            import echo_bot
+            from bot import echo_bot
             branch = str(data.get("branch") or "").strip()
             if not branch:
                 raise ValueError("填要切到的分支名。")
@@ -635,7 +646,7 @@ def admin_post(path: str, data: dict, user: dict) -> tuple:
             _branch_cache["at"] = 0.0
             return _reply({"ok": bool(view.get("ok")), "branch": view.get("branch"), "message": view.get("message"), "file_branch": view.get("branch")})
         if path == "/api/pull":
-            import echo_bot
+            from bot import echo_bot
             hours = data.get("hours")
             if isinstance(hours, bool) or not isinstance(hours, (int, float)) or (isinstance(hours, float) and not hours.is_integer()):
                 raise ValueError("间隔要填整数小时。")
@@ -653,7 +664,7 @@ def admin_post(path: str, data: dict, user: dict) -> tuple:
                 message += "大豆没在运行，启动后才会拉。"
             return _reply({"ok": True, "pull": view, "message": message})
         if path == "/api/watch":
-            import echo_bot
+            from bot import echo_bot
             minutes = data.get("minutes")
             if isinstance(minutes, bool) or not isinstance(minutes, (int, float)) or (isinstance(minutes, float) and not minutes.is_integer()):
                 raise ValueError("间隔要填整数分钟。")
@@ -674,7 +685,7 @@ def admin_post(path: str, data: dict, user: dict) -> tuple:
                 message += "大豆没在运行，启动后才会查。"
             return _reply({"ok": True, "watch": view, "message": message})
         if path == "/api/reminders/delete":
-            import echo_bot
+            from bot import echo_bot
             item_id = str(data.get("id") or "")
             if not echo_bot.delete_reminder(item_id):
                 return _reply({"error": "这条提醒不存在。"}, 400)
@@ -686,7 +697,7 @@ def admin_post(path: str, data: dict, user: dict) -> tuple:
             text = str(data.get("text") or "").strip()
             if not text:
                 return _reply({"error": "先写一句要试的话。"}, 400)
-            import echo_bot
+            from bot import echo_bot
             echo_bot.apply_bot_config()
             result = echo_bot.preview_question(text)
             return _reply(result)
@@ -748,7 +759,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def auth_routes(self, method: str) -> bool:
         """登录相关的几个地址，不用登录就能访问。"""
-        import auth
+        from common import auth
         parsed = urlparse(self.path)
         query = parse_qs(parsed.query)
         arg = lambda key: (query.get(key) or [""])[0]
@@ -790,7 +801,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def gate(self, method: str) -> bool:
         """先认人：没登录的跳去登录页（接口返回 401）。处理完了返回 True。"""
-        import auth
+        from common import auth
         self.user = auth.session_user(auth.read_cookie(self.headers.get("Cookie"), auth.COOKIE))
         self.auth_user = self.user  # 子站 Handler 换类后靠这个知道是谁
         if self.auth_routes(method):
@@ -865,7 +876,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header("Content-Length", "0")
                 self.end_headers()
                 return True
-            module = __import__(module_name)
+            module = importlib.import_module(module_name)
             handler_class = next(v for v in vars(module).values()
                                  if isinstance(v, type) and issubclass(v, BaseHTTPRequestHandler)
                                  and v is not BaseHTTPRequestHandler and v.__module__ == module_name)
@@ -917,7 +928,7 @@ def site_online(port: int) -> bool:
 
 
 def sites_view() -> dict:
-    import echo_bot
+    from bot import echo_bot
     # review_web_base() 形如 http://10.234.30.83/review（80 端口不带端口号）或 http://10.234.30.83:8765/review，
     # 去掉 /review 就是对外的根地址；不能按冒号切，80 端口时会切成 "http"
     web_root = echo_bot.review_web_base().rsplit("/review", 1)[0]
@@ -937,7 +948,7 @@ def sites_view() -> dict:
 
 
 def review_view() -> dict:
-    import echo_bot
+    from bot import echo_bot
     return {
         "subs": echo_bot.load_review_subs(),
         "state": echo_bot.load_review_json(echo_bot.REVIEW_STATE_PATH, {}),
@@ -962,9 +973,10 @@ def start_board_api() -> None:
 
 
 def main() -> None:
+    migrate_legacy_data(lambda text: print(text, flush=True))
     apply_models_here()
     start_board_api()
-    import wiki_kb
+    from common import wiki_kb
     if wiki_kb.start_sync_loop(lambda text: print(text, flush=True)):
         print(f"知识库每 {wiki_kb.setting('WIKI_SYNC_MINUTES', '30')} 分钟从 {wiki_kb.setting('WIKI_SOURCE_DIR')} 同步到 wiki/", flush=True)
     server = QuietHTTPServer((HOST, PORT), Handler)
@@ -972,6 +984,3 @@ def main() -> None:
     server.serve_forever()
 
 
-if __name__ == "__main__":
-    sys.modules.setdefault("console", sys.modules[__name__])  # 新后端 import console 时拿到同一份状态
-    main()

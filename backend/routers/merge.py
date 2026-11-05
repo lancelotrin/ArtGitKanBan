@@ -11,7 +11,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-import merge_web
+from boards import merge_web
 from backend.deps import admin_user, current_user, same_origin
 
 merge_review = merge_web.merge_review  # merge_web 导入时才把 MergeReviewPortable 加进 sys.path

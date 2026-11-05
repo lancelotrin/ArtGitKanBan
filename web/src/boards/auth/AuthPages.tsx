@@ -10,7 +10,7 @@ export interface Site { name: string; icon: string; color: string; port: string;
 export const useMe = () => useQuery({ queryKey: ["me"], queryFn: () => api<Me>("/me"), staleTime: 60_000 });
 export const useSites = () => useQuery({ queryKey: ["sites"], queryFn: () => api<{ sites: Site[] }>("/sites"), refetchInterval: 30_000 });
 
-// 退出走 console.py 的 /api/logout（它管登录 cookie）。
+// 退出走 console/server.py 的 /api/logout（它管登录 cookie）。
 export async function logout() {
   await fetch("/api/logout", { method: "POST" });
   location.href = "/login";

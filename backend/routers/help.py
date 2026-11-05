@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
-import wiki_kb
+from common import wiki_kb
 from backend import help_store, llm
 from backend.deps import admin_user, current_user, same_origin
 

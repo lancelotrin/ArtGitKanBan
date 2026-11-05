@@ -6,9 +6,9 @@ import datetime
 import json
 import os
 import threading
+from common.paths import DATA_DIR
 
-BOT_DIR = os.path.dirname(os.path.abspath(__file__))
-STATS_PATH = os.path.join(BOT_DIR, "model_stats.json")
+STATS_PATH = os.path.join(DATA_DIR, "model_stats.json")
 ERROR_MAX = 160
 BEIJING_TZ = datetime.timezone(datetime.timedelta(hours=8))
 _lock = threading.Lock()

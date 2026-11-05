@@ -1,6 +1,6 @@
 """大豆回归测试：用真实路由和 GLM 跑历史翻车问题，不发飞书消息。
 
-用法：python D:/FeishuBot/regress.py
+用法：在项目根目录 python -m bot.regress
 """
 import inspect
 import json
@@ -10,8 +10,8 @@ import sys
 import tempfile
 import time
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import echo_bot as bot  # noqa: E402
+from bot import echo_bot as bot
+from common.paths import DATA_DIR
 
 CHAT_ID = "oc_regress"
 SENT = []
@@ -176,7 +176,7 @@ def run_question(index: int, question: str) -> str:
     return "\n".join(SENT)
 
 
-REPORT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "regress_out.txt")
+REPORT_PATH = os.path.join(DATA_DIR, "regress_out.txt")
 REPORT = []
 
 

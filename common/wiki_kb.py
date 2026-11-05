@@ -16,9 +16,9 @@ import shutil
 import threading
 import time
 from collections import Counter, defaultdict
+from common.paths import DATA_DIR
 
-BOT_DIR = os.path.dirname(os.path.abspath(__file__))
-WIKI_DIR = os.path.join(BOT_DIR, "wiki")
+WIKI_DIR = os.path.join(DATA_DIR, "wiki")
 CONTEXT_CHARS = 9000
 
 STOP = {"这个", "那个", "什么", "怎么", "一下", "可以", "问题", "请问", "如何", "是否", "我们", "你们",
@@ -165,7 +165,7 @@ def search(query: str, limit: int = 6, context_chars: int = CONTEXT_CHARS, root:
 
 
 def setting(name: str, default: str = "") -> str:
-    from auth import env_value, read_env_file
+    from common.auth import env_value, read_env_file
     return env_value(name, read_env_file()) or default
 
 

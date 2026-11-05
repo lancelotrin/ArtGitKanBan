@@ -9,8 +9,8 @@ import unittest
 
 from fastapi.testclient import TestClient
 
-import auth
-import wish_board
+from common import auth
+from boards import wish_board
 from backend.app import app
 
 

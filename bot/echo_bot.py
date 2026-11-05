@@ -2,7 +2,7 @@
 
 凭证：收发消息用 lark-cli 的 bot 身份；搜/读飞书文档只支持 user 身份，范围为该登录用户可见的文档，过期需重新 `lark-cli auth login`。
 回答默认用本机 Codex CLI（AI_PROVIDER=codex，见 codex_cli.py）；AI_PROVIDER=glm 时用智谱 GLM：环境变量 LLM_API_KEY、LLM_MODEL（默认 glm-4-flash）、LLM_VISION_MODEL（默认 glm-4v-flash），可选 LLM_BASE_URL；未配置时退化为只搜文档。
-直接 `python echo_bot.py`，Ctrl+C 退出。
+在项目根目录 `python -m bot`，Ctrl+C 退出。
 """
 import asyncio
 import base64
@@ -26,12 +26,13 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-import bomb
-import bomb_board
-import codex_cli
-import local_edit
-import model_stats
-import stickers
+from bot import bomb
+from boards import bomb_board
+from common import codex_cli
+from bot import local_edit
+from common import model_stats
+from bot import stickers
+from common.paths import DATA_DIR, ROOT_DIR, migrate_legacy_data
 
 EVENT_TYPE = "im.message.receive_v1"
 MAX_SEEN = 1000
@@ -56,7 +57,6 @@ HISTORY_TURNS = 16
 HISTORY_CHARS = 1500
 MAX_IMAGES = 3
 
-BOT_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_PROJECT_ROOT = r"D:\Fork\onepiece_engine\Client"
 PROJECT_ROOT = os.path.abspath(os.environ.get("FEISHU_BOT_PROJECT_ROOT") or DEFAULT_PROJECT_ROOT)
 LOCAL_ROOTS = ["Assets/MD~", "Assets/Editor", "Assets/Scripts"]
@@ -68,18 +68,18 @@ CODE_SKIP_DIRS = {".git", "Library", "Temp", "obj", "node_modules", "StreamingAs
 MAX_CODE_HITS = 5
 MAX_CODE_FILE_BYTES = 800_000
 MAX_CODE_WALK_FILES = 12000
-FAQ_PATH = os.path.join(os.path.dirname(__file__), "faq.json")
-NOTES_PATH = os.path.join(os.path.dirname(__file__), "notes.json")
-MISSES_PATH = os.path.join(os.path.dirname(__file__), "misses.jsonl")
-QUESTIONS_PATH = os.path.join(os.path.dirname(__file__), "questions.jsonl")
+FAQ_PATH = os.path.join(DATA_DIR, "faq.json")
+NOTES_PATH = os.path.join(DATA_DIR, "notes.json")
+MISSES_PATH = os.path.join(DATA_DIR, "misses.jsonl")
+QUESTIONS_PATH = os.path.join(DATA_DIR, "questions.jsonl")
 QUESTION_KEEP = 2000
-REF_INDEX_PATH = os.path.join(os.path.dirname(__file__), "ref_index.sqlite")
+REF_INDEX_PATH = os.path.join(DATA_DIR, "ref_index.sqlite")
 REF_INDEX_LOCK = REF_INDEX_PATH + ".lock"
 REF_INDEX_MAX_AGE = 6 * 3600
 RECORD_MISSES = True
 RECORD_QUESTIONS = True
 PERSIST_HISTORY = True
-HISTORY_PATH = os.path.join(os.path.dirname(__file__), "chat_history.json")
+HISTORY_PATH = os.path.join(DATA_DIR, "chat_history.json")
 MISS_WINDOW = 30 * 60
 MAX_NOTES = 200
 DIR_INDEX_DEPTH = 4
@@ -99,8 +99,8 @@ PATH_SYNONYMS = {
 }
 PATH_QUESTION_PATTERN = re.compile(r"(在哪|哪个路径|什么路径|路径是|放哪|放在哪|哪个目录|什么目录|目录在|存放在|位置在)")
 CORRECTION_PATTERN = re.compile(r"^(不对|不是|错了|你说错了|说错了|纠正|更正|应该是|其实是|实际是)")
-IMG_DIR = os.path.join(BOT_DIR, "_img")
-IMG_DIR_REL = "_img"
+IMG_DIR = os.path.join(DATA_DIR, "_img")
+IMG_DIR_REL = "data/_img"
 
 # 「怎么用」只能单独出现才当帮助；「fork怎么用」应走问答，不能误命中。
 HELP_PATTERN = re.compile(
@@ -184,7 +184,7 @@ PREVIEWING = False
 
 def load_bot_config() -> dict:
     """后台和机器人共用。项目目录、允许查询的 Git 分支，都在 .env（PROJECT_ROOT、GIT_BRANCHES）。"""
-    import settings
+    from common import settings
     return {"project_root": settings.project_root(), "git_branches": settings.git_branches()}
 
 
@@ -428,7 +428,7 @@ WEB_OFFLINE_PROMPT = """你是「大豆」，游戏项目组的助手。这次�
 
 def get_env(name: str) -> str:
     """系统环境变量 → 项目根目录的 .env → （Windows）用户环境变量。"""
-    from auth import env_value, read_env_file
+    from common.auth import env_value, read_env_file
     value = env_value(name, read_env_file())
     if value or sys.platform != "win32":
         return value
@@ -1117,10 +1117,10 @@ def append_question(question: str, route: str, answer: str) -> None:
 
 
 COACH_ROUTES = frozenset({"web", "gold-advice", "image", "chat", "llm", "capability", "docs"})
-COACH_PATH = os.path.join(os.path.dirname(__file__), "coach.json")
-REVIEWS_PATH = os.path.join(os.path.dirname(__file__), "reviews.json")
+COACH_PATH = os.path.join(DATA_DIR, "coach.json")
+REVIEWS_PATH = os.path.join(DATA_DIR, "reviews.json")
 REVIEW_KEEP = 100
-COACH_CWD = os.path.join(os.path.dirname(__file__), "_coach_cwd")
+COACH_CWD = os.path.join(DATA_DIR, "_coach_cwd")
 _COACH_SKIP_WORDS = ("什么", "哪个", "路径", "在哪", "模型", "怎么", "可以", "这个", "那个", "一下", "还是")
 _coach_queue = queue.Queue(maxsize=2)
 _coach_key_logged = False
@@ -2307,7 +2307,7 @@ def is_pull_request(text: str) -> bool:
     return not re.search(r"哪|怎么|地址|clone|链接", text, re.IGNORECASE)
 
 
-PULL_SCHEDULE_PATH = os.path.join(BOT_DIR, "pull_schedule.json")
+PULL_SCHEDULE_PATH = os.path.join(DATA_DIR, "pull_schedule.json")
 PULL_SCHEDULE_MIN_SEC = 3600
 PULL_SCHEDULE_MAX_SEC = 7 * 24 * 3600
 PULL_SCHEDULE_POLL_SEC = 20
@@ -2525,7 +2525,7 @@ def pull_schedule_loop() -> None:
         send_owner_pull(f"{title}：\n{result}")
 
 
-WATCH_PATH = os.path.join(BOT_DIR, "watch.json")
+WATCH_PATH = os.path.join(DATA_DIR, "watch.json")
 WATCH_MIN_SEC = 5 * 60
 WATCH_MAX_SEC = 24 * 3600
 WATCH_DEFAULT_SEC = 30 * 60
@@ -2962,7 +2962,7 @@ def watch_loop() -> None:
         log(f"[watch] ran sent={sent} next={following:%Y-%m-%d %H:%M}")
 
 
-BOMB_PATH = os.path.join(BOT_DIR, "bomb.json")
+BOMB_PATH = os.path.join(DATA_DIR, "bomb.json")
 BOMB_INTERVAL_SEC = 1800
 BOMB_LOOP_DAYS = 2
 BOMB_TOLD_KEEP = 500
@@ -3216,9 +3216,9 @@ def bomb_loop() -> None:
         time.sleep(BOMB_POLL_SEC)
 
 
-REVIEW_SUBS_PATH = os.path.join(BOT_DIR, "review_subs.json")
-REVIEW_STATE_PATH = os.path.join(BOT_DIR, "review_state.json")
-REVIEW_DIR = os.path.join(BOT_DIR, "reviews")
+REVIEW_SUBS_PATH = os.path.join(DATA_DIR, "review_subs.json")
+REVIEW_STATE_PATH = os.path.join(DATA_DIR, "review_state.json")
+REVIEW_DIR = os.path.join(DATA_DIR, "reviews")
 REVIEW_KEEP_DAYS = 90
 REVIEW_WEB_PORT = int(os.environ.get("CONSOLE_PORT", "80"))  # 复盘挂在大豆后台 /review 下
 REVIEW_POLL_SEC = 60
@@ -3353,21 +3353,42 @@ def control_review_sub(action: str, name: str = "", git_author: str = "", open_i
         hint = [item for item in authors if git_author.casefold() in item.casefold() or item.casefold() in git_author.casefold()][:5]
         tip = (" 相近的有：" + "、".join(hint) + "。") if hint else " 打开终端跑 git shortlog -sn origin/main 能看到作者名。"
         return {"ok": False, "message": f"main 和 CBT2_bugfix 上找不到作者 {git_author} 的提交。{tip}", "subs": load_review_subs()}
-    note = "，会私聊。"
-    if not open_id:
-        open_id, why = find_open_id_by_name(name)
-        note = "，已按姓名找到飞书账号，会私聊。" if open_id else "。" + why
     with _review_lock:
         subs = load_review_subs()
+        old = next((item for item in subs if item.get("git_author") == matched), {})
         kept = [item for item in subs if item.get("git_author") != matched]
-        kept.append({"name": name, "git_author": matched, "open_id": open_id})
+        kept.append({"name": name, "git_author": matched, "open_id": open_id, "dm": bool(old.get("dm"))})
         save_review_json(REVIEW_SUBS_PATH, {"subs": kept})
-        return {"ok": True, "message": f"已登记 {name}（{matched}）{note}", "subs": kept}
+        tip = "，会私聊。" if old.get("dm") else "。要私聊就在名单里勾上「私聊」。"
+        return {"ok": True, "message": f"已登记 {name}（{matched}）{tip}", "subs": kept}
+
+
+def control_review_dm(git_author: str, on: bool) -> dict:
+    """勾选/取消某人的私聊。勾上时按姓名找 open_id，找不到就不勾。"""
+    git_author = (git_author or "").strip()
+    sub = next((item for item in load_review_subs() if item.get("git_author") == git_author), None)
+    if not sub:
+        return {"ok": False, "message": "名单里没有这个人。", "subs": load_review_subs()}
+    open_id = sub.get("open_id") or ""
+    if on and not open_id:
+        open_id, why = find_open_id_by_name(str(sub.get("name") or ""))
+        if not open_id:
+            return {"ok": False, "message": why.replace("，先只出网页。", "，没法私聊。"), "subs": load_review_subs()}
+    with _review_lock:
+        subs = load_review_subs()
+        for item in subs:
+            if item.get("git_author") == git_author:
+                item["dm"] = bool(on)
+                if open_id:
+                    item["open_id"] = open_id
+        save_review_json(REVIEW_SUBS_PATH, {"subs": subs})
+    name = sub.get("name") or git_author
+    return {"ok": True, "message": f"{name} 以后每天会收到私聊摘要。" if on else f"{name} 不再私聊，只出网页。", "subs": subs}
 
 
 def fill_review_open_ids(subs: list) -> list:
-    """名单里没 open_id 的，按姓名再找一次（人后来进了群就能补上），找到就写回。"""
-    missing = [item for item in subs if not item.get("open_id") and item.get("name")]
+    """勾了私聊但没 open_id 的，按姓名再找一次（人后来进了群就能补上），找到就写回。"""
+    missing = [item for item in subs if item.get("dm") and not item.get("open_id") and item.get("name")]
     if not missing:
         return subs
     found = {}
@@ -3681,7 +3702,7 @@ def generate_daily_reviews(day: datetime.date, notify: bool = True) -> str:
             record["status"] = "failed"
             record["error"] = str(error)[:200]
         save_review_json(os.path.join(REVIEW_DIR, record["date"], review_file_name(author) + ".json"), record)
-        if notify and sub.get("open_id") and record["status"] in ("ok", "failed"):
+        if notify and sub.get("dm") and sub.get("open_id") and record["status"] in ("ok", "failed"):
             link = f"{base}/r/{record['date']}/{review_file_name(author)}"
             brief = "复盘生成失败，网页上有说明。" if record["status"] == "failed" else review_brief(
                 record.get("report_md", ""), len(record.get("commits") or []), record.get("bomb_out_md", ""), record.get("bomb_in_md", ""))
@@ -3726,7 +3747,7 @@ def request_review_run(day_text: str) -> dict:
         state = load_review_json(REVIEW_STATE_PATH, {})
         state["run_requested"] = day_text
         save_review_json(REVIEW_STATE_PATH, state)
-    return {"ok": True, "message": f"已排队补跑 {day_text}，一两分钟内开始，跑完会私聊登记了 open_id 的人，并发到复盘群。"}
+    return {"ok": True, "message": f"已排队补跑 {day_text}，一两分钟内开始，跑完会私聊勾了「私聊」的人，并发到复盘群。"}
 
 
 def review_loop() -> None:
@@ -4580,7 +4601,7 @@ def save_note(question: str, fact: str) -> None:
         json.dump({"items": items}, file, ensure_ascii=False, indent=2)
 
 
-PEOPLE_PATH = os.path.join(os.path.dirname(__file__), "people.json")
+PEOPLE_PATH = os.path.join(DATA_DIR, "people.json")
 PEOPLE_ROLES = ("项目管理员", "管理员", "美术总监", "主美", "制作人", "主策", "主程", "技术美术", "TA", "项目经理", "PM",
                 "运维", "QA", "测试负责人", "负责人", "对接人", "组长", "主管")
 _ROLE_ALT = "|".join(re.escape(role) for role in PEOPLE_ROLES)
@@ -5235,7 +5256,7 @@ BILIBILI_COOKIE = {"value": ""}
 BILIBILI_HEADERS = {"User-Agent": WEB_BROWSER_UA, "Referer": "https://www.bilibili.com/"}
 
 
-BILIBILI_COOKIE_PATH = os.path.join(BOT_DIR, "bilibili_cookie.txt")
+BILIBILI_COOKIE_PATH = os.path.join(DATA_DIR, "bilibili_cookie.txt")
 BILIBILI_COOKIE_MAX = 4000
 
 
@@ -5317,7 +5338,7 @@ BILIBILI_LOGIN_COOKIES = ("SESSDATA", "bili_jct", "DedeUserID", "DedeUserID__ckM
 
 def bilibili_qr_start() -> dict:
     """向 B 站要一个扫码登录二维码，返回 svg data uri。key 只留在内存里。"""
-    vendor = os.path.join(BOT_DIR, "vendor")
+    vendor = os.path.join(ROOT_DIR, "vendor")
     if vendor not in sys.path:
         sys.path.insert(0, vendor)
     import segno
@@ -5581,7 +5602,7 @@ def format_gold_quote(bar: str) -> str:
     return "\n".join(lines)
 
 
-GOLD_CACHE_PATH = os.path.join(os.path.dirname(__file__), "gold_cache.json")
+GOLD_CACHE_PATH = os.path.join(DATA_DIR, "gold_cache.json")
 GOLD_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 GOLD_CACHE_SECONDS = 20 * 60
 
@@ -7009,7 +7030,7 @@ def answer_prefab_count(text: str) -> str:
 
 
 ANSWER_DOUBT_PATTERN = re.compile(r"哪里不对|回答对吗|对不对|这回答|到底.*不对")
-SHADER_MEMORY_PATH = os.path.join(os.path.dirname(__file__), "last_shader.json")
+SHADER_MEMORY_PATH = os.path.join(DATA_DIR, "last_shader.json")
 SHADER_MEMORY_WINDOW = 30 * 60
 
 
@@ -7093,7 +7114,7 @@ def answer_correction(chat_id: str, raw_question: str, parent_text: str) -> str:
     return f"记住了，以后按这个答：{fact}"
 
 
-AGENTS_PATH = os.path.join(BOT_DIR, "agents.json")
+AGENTS_PATH = os.path.join(DATA_DIR, "agents.json")
 _jobs = {}
 _jobs_lock = threading.Lock()
 _edit_locks = {}
@@ -7184,7 +7205,7 @@ def download_file_message(message_id: str, file_key: str) -> str:
 
 
 def send_user_file(open_id: str, name: str, content: str) -> None:
-    folder = os.path.join(BOT_DIR, "_agent_out")
+    folder = os.path.join(DATA_DIR, "_agent_out")
     os.makedirs(folder, exist_ok=True)
     with open(os.path.join(folder, name), "w", encoding="utf-8", newline="\n") as file:
         file.write(content)
@@ -7303,7 +7324,7 @@ def answer_local_edit(text: str, sender: str) -> str:
         return f"已写到你电脑上的 `{path}`，大约 {count} 行有变化。"
 
 
-REMINDERS_PATH = os.path.join(BOT_DIR, "reminders.json")
+REMINDERS_PATH = os.path.join(DATA_DIR, "reminders.json")
 _reminder_lock = threading.Lock()
 _REMIND_CANCEL = re.compile(r"取消提醒|别提醒|不用提醒")
 _REMIND_URGENT = re.compile(r"加急\s*提醒|提醒\s*加急|应用内加急")
@@ -7871,8 +7892,9 @@ def preview_question(text: str) -> dict:
 
 
 def main() -> None:
+    migrate_legacy_data(log)
     # lark-cli 下载图片的 --output 只接受相对当前目录的路径
-    os.chdir(BOT_DIR)
+    os.chdir(ROOT_DIR)
     if not LARK_CLI:
         sys.exit("找不到 lark-cli，请先安装：npm i -g @larksuite/cli")
     if not os.path.isdir(PROJECT_ROOT):
@@ -7922,14 +7944,14 @@ def main() -> None:
             if len(seen_ids) > MAX_SEEN:
                 seen_ids.pop(0)
 
+            if not should_reply(message, event):
+                log(f"[skip] no @大豆 message_id={message_id}")
+                continue
             text = extract_text(message)
             image_keys = extract_image_keys(message)
             log(f"[recv] chat={message.get('chat_id')} chat_type={message.get('chat_type')} "
                 f"msg_type={message.get('message_type')} text={text!r} images={image_keys} "
                 f"mentions={len(message.get('mentions') or [])}")
-            if not should_reply(message, event):
-                log(f"[skip] no @大豆 message_id={message_id}")
-                continue
             message["_sender_open_id"] = sender_open_id(event)
             log(f"[sender] {message['_sender_open_id'] or '-'}")
             executor.submit(handle, message_id, message, local_index)

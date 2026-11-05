@@ -7,7 +7,7 @@ import os
 import tempfile
 import unittest
 
-import wiki_kb
+from common import wiki_kb
 
 
 def write(root: str, name: str, text: str) -> None:

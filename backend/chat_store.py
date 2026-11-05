@@ -10,9 +10,9 @@ import uuid
 from contextlib import contextmanager
 from typing import Iterator, List, Optional
 
-from backend.deps import ROOT_DIR
+from common.paths import DATA_DIR
 
-DB_PATH = os.environ.get("CHAT_DB_PATH") or os.path.join(ROOT_DIR, "chats.sqlite3")
+DB_PATH = os.environ.get("CHAT_DB_PATH") or os.path.join(DATA_DIR, "chats.sqlite3")
 TITLE_MAX = 40
 _lock = threading.Lock()
 

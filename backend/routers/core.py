@@ -3,7 +3,7 @@ from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends
 
-import console
+from console import server as console
 from backend.deps import auth, current_user
 
 router = APIRouter(tags=["门户"])

@@ -11,9 +11,10 @@ import re
 import threading
 from typing import List, Optional
 
-from backend.deps import ROOT_DIR, auth
+from backend.deps import auth
+from common.paths import DATA_DIR
 
-HELP_PATH = os.environ.get("HELP_PATH") or os.path.join(ROOT_DIR, "help.json")
+HELP_PATH = os.environ.get("HELP_PATH") or os.path.join(DATA_DIR, "help.json")
 BEIJING_TZ = datetime.timezone(datetime.timedelta(hours=8))
 NO_DEPARTMENT = "未填部门"
 _lock = threading.Lock()

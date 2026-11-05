@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-import auth
+from common import auth
 
 
 def fake_get(responses: dict):

@@ -6,7 +6,7 @@ from typing import Any, Dict
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 
-import console
+from console import server as console
 from backend.deps import admin_user, same_origin
 
 router = APIRouter(prefix="/admin", tags=["后台管理"])
@@ -31,7 +31,7 @@ WRITES = {
     "stop": "停止大豆",
     "wish": "心愿墙管理：action=allow_create/update/delete",
     "bomb": "炸线提醒：action=on/off/now（minutes、days）、groups、ignore_paths",
-    "review": "自检复盘：action=add/remove（name、git_author，open_id 可省，按姓名自动找）、run（date）、groups",
+    "review": "自检复盘：action=add/remove（name、git_author）、dm（git_author、on：勾选私聊，按姓名自动找 open_id）、run（date）、groups",
     "bilibili": "B 站登录：action=qr/qr_poll，或 cookie",
     "checkout": "把工作区切到某个分支：branch",
     "pull": "定时拉代码：enabled、hours、run_now",

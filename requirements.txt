@@ -1,4 +1,4 @@
-# 后台（console.py + backend/）的依赖。机器人 echo_bot.py 仍然只用标准库。
+# 后台（console/ + backend/）的依赖。机器人 bot/ 仍然只用标准库。
 # 安装：python -m pip install -r requirements.txt
 fastapi>=0.115
 uvicorn>=0.30

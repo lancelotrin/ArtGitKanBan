@@ -10,7 +10,7 @@ from unittest import mock
 
 from fastapi.testclient import TestClient
 
-import auth
+from common import auth
 from backend import help_store, llm
 from backend.app import app
 from backend.routers import help as help_router

@@ -6,10 +6,10 @@ import datetime
 import json
 import os
 import threading
+from common.paths import DATA_DIR
 
-BOT_DIR = os.path.dirname(os.path.abspath(__file__))
-HISTORY_PATH = os.path.join(BOT_DIR, "bomb_history.json")
-STATE_PATH = os.path.join(BOT_DIR, "bomb.json")  # 炸线扫描的开关、间隔、上次/下次时间（echo_bot 写）
+HISTORY_PATH = os.path.join(DATA_DIR, "bomb_history.json")
+STATE_PATH = os.path.join(DATA_DIR, "bomb.json")  # 炸线扫描的开关、间隔、上次/下次时间（echo_bot 写）
 KEEP_DAYS = 90
 BEIJING_TZ = datetime.timezone(datetime.timedelta(hours=8))
 _lock = threading.Lock()

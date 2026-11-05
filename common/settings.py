@@ -1,6 +1,6 @@
 """大豆的运行设置：全部来自 .env（系统环境变量优先），不再用 bot_config.json，网页上也不再改。
 
-后台（console.py）、新后端、机器人（echo_bot.py）都从这里读，每次现读，改了 .env 重启大豆即可生效。
+后台（console/server.py）、新后端、机器人（echo_bot.py）都从这里读，每次现读，改了 .env 重启大豆即可生效。
 
   PROJECT_ROOT       Unity 工程的 Client 目录（下面要有 Assets），就是部署这台电脑上的检出
   GIT_BRANCHES       允许查询的 Git 分支，逗号或空格分隔；main 总会带上
@@ -10,7 +10,7 @@
 import os
 import re
 
-from auth import env_value, read_env_file
+from common.auth import env_value, read_env_file
 
 DEFAULT_PROJECT_ROOT = r"D:\Fork\onepiece_engine\Client"
 DEFAULT_BRANCHES = ("main", "CBT2_bugfix")

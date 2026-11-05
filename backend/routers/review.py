@@ -7,7 +7,7 @@ import zlib
 
 from fastapi import APIRouter, Depends, HTTPException
 
-import review_board as rw
+from boards import review_board as rw
 from backend.deps import current_user
 
 router = APIRouter(prefix="/reviews", tags=["自检复盘"])
