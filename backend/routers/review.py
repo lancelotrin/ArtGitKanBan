@@ -7,6 +7,9 @@ import zlib
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from typing import Optional
+
+from boards import board_access
 from boards import review_board as rw
 from backend.deps import current_user
 
@@ -21,14 +24,34 @@ def pill(info: dict) -> dict:
     return {"cls": info["pill"][0], "text": info["pill"][1]}
 
 
+def allowed(user: dict) -> Optional[set]:
+    """管理员开了「只看自己的」时，普通用户能看的文件名；None 表示不限制。不在名单里的人直接 403。"""
+    if not board_access.restricted("/review", user):
+        return None
+    files = rw.own_files(user)
+    if not files:
+        raise HTTPException(status_code=403, detail={"message": "你不在复盘名单里，看不到复盘。要加人找管理员在后台登记。"})
+    return files
+
+
+def check(user: dict, name: str) -> None:
+    files = allowed(user)
+    if files is not None and name not in files:
+        raise HTTPException(status_code=403, detail={"message": "只能看自己的复盘。"})
+
+
 @router.get("/days", operation_id="review_day", summary="某一天所有人的复盘概要；不传 date 就是最新一天")
-def review_day(date: str = "", _user: dict = Depends(current_user)) -> dict:
+def review_day(date: str = "", user: dict = Depends(current_user)) -> dict:
+    files = allowed(user)
     dates = rw.list_dates()
+    if files is not None:  # 只留自己有记录的日期，前后翻页不会翻到空的一天
+        dates = [day for day in dates if any(rw.load_record(day, name) for name in files)]
     if not dates:
-        return {"dates": [], "date": "", "people": []}
+        return {"dates": [], "date": "", "people": [], "mine_only": files is not None}
     day = date if rw.DATE_PATTERN.match(date or "") else dates[0]
     older, newer = rw.neighbors(dates, day)
-    rows = [(record, rw.summary_of(record)) for record in rw.day_records(day)]
+    rows = [(record, rw.summary_of(record)) for record in rw.day_records(day)
+            if files is None or record["_file"] in files]
     rows.sort(key=lambda row: (not row[1]["bomb"], not row[1]["risks"], -row[1]["commits"], str(row[0].get("name"))))
     people = []
     for record, info in rows:
@@ -38,7 +61,7 @@ def review_day(date: str = "", _user: dict = Depends(current_user)) -> dict:
                        "tags": info["tags"], "pill": pill(info), "summary_html": rw.render_inline(info["text"])})
     return {
         "dates": dates, "date": day, "weekday": rw.weekday(day), "older": older, "newer": newer, "latest": dates[0],
-        "people": people,
+        "people": people, "mine_only": files is not None,
         "filters": [{"key": key, "text": text, "count": sum(1 for p in people if key == "all" or key in p["tags"])}
                     for key, text in rw.FILTERS],
         "stats": {"people": len(people), "commits": sum(p["commits"] for p in people),
@@ -47,9 +70,10 @@ def review_day(date: str = "", _user: dict = Depends(current_user)) -> dict:
 
 
 @router.get("/people/{name}", operation_id="review_person", summary="某个人每天的复盘历史")
-def review_person(name: str, _user: dict = Depends(current_user)) -> dict:
+def review_person(name: str, user: dict = Depends(current_user)) -> dict:
     if not rw.NAME_PATTERN.match(name):
         raise HTTPException(status_code=404, detail={"message": "没有这个人。"})
+    check(user, name)
     rows, display = [], name
     for day in rw.list_dates():
         record = rw.load_record(day, name)
@@ -65,7 +89,8 @@ def review_person(name: str, _user: dict = Depends(current_user)) -> dict:
 
 
 @router.get("/days/{date}/{name}", operation_id="review_report", summary="某人某天的完整复盘：提交、diff、隐患、炸线")
-def review_report(date: str, name: str, _user: dict = Depends(current_user)) -> dict:
+def review_report(date: str, name: str, user: dict = Depends(current_user)) -> dict:
+    check(user, name)
     record = rw.load_record(date, name)
     if not record:
         raise HTTPException(status_code=404, detail={"message": "没有这份复盘。"})

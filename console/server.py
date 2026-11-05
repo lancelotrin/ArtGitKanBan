@@ -586,6 +586,12 @@ def admin_post(path: str, data: dict, user: dict) -> tuple:
                 return _reply({"ok": True})
         if path == "/api/stop":
             return _reply({"stopped": stop_bot()})
+        if path == "/api/sites":
+            from boards import board_access
+            if str(data.get("action") or "") != "private":
+                raise ValueError("不认识的操作。")
+            board_access.set_private(str(data.get("port") or ""), bool(data.get("on")))
+            return _reply(dict(sites_view(), ok=True))
         if path in ("/api/models", "/api/config"):
             return _reply({"error": ENV_ONLY}, 400)
         if path == "/api/wish":
@@ -927,8 +933,10 @@ def site_online(port: int) -> bool:
         return False
 
 
-def sites_view() -> dict:
+def sites_view(user: dict = None) -> dict:
+    """子站表。给了 user 时按「只看自己的」开关过滤：普通用户不在名单里的看板不显示。"""
     from bot import echo_bot
+    from boards import board_access, review_board
     # review_web_base() 形如 http://10.234.30.83/review（80 端口不带端口号）或 http://10.234.30.83:8765/review，
     # 去掉 /review 就是对外的根地址；不能按冒号切，80 端口时会切成 "http"
     web_root = echo_bot.review_web_base().rsplit("/review", 1)[0]
@@ -944,6 +952,16 @@ def sites_view() -> dict:
     sites = [{"name": name, "icon": icon, "color": color, "port": port, "desc": desc, "manage": manage,
               "url": f"{web_root}{port}/", "local": f"{local_root}{port}/", "online": True}
              for name, icon, color, port, desc, manage in registry]
+    private = board_access.load()
+    for site in sites:
+        if site["port"] in board_access.SUPPORTED:
+            site["private"] = private.get(site["port"], False)
+            site["private_note"] = board_access.SUPPORTED[site["port"]]
+            if site["private"]:
+                site["desc"] = site["desc"].replace("所有人都能看", "每个人只看得到自己的")
+    if user is not None and user.get("role") != "admin":
+        hidden = {"/review"} if private.get("/review") and not review_board.own_files(user) else set()
+        sites = [site for site in sites if site["port"] not in hidden]
     return {"sites": sites}
 
 

@@ -11,6 +11,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from common import auth
+from boards import board_access
 from boards import bomb_board
 from console import server as console
 from boards import merge_web
@@ -34,6 +35,8 @@ class BoardsApiTest(unittest.TestCase):
             (bomb_board, "HISTORY_PATH"): bomb_board.HISTORY_PATH, (review_board, "REVIEW_DIR"): review_board.REVIEW_DIR,
             (merge_web, "SESSIONS_DIR"): merge_web.SESSIONS_DIR, (merge_web, "PROJECTS_PATH"): merge_web.PROJECTS_PATH,
             (merge_web, "OPEN_PATH"): merge_web.OPEN_PATH,
+            (board_access, "PRIVATE_PATH"): board_access.PRIVATE_PATH,
+            (review_board, "REVIEW_SUBS_PATH"): review_board.REVIEW_SUBS_PATH,
             (console, "NOTES_PATH"): console.NOTES_PATH, (console, "PEOPLE_PATH"): console.PEOPLE_PATH,
         }
         auth.USERS_PATH = os.path.join(root, "users.json")
@@ -43,6 +46,8 @@ class BoardsApiTest(unittest.TestCase):
         merge_web.SESSIONS_DIR = Path(root) / "sessions"
         merge_web.PROJECTS_PATH = os.path.join(root, "merge_projects.json")
         merge_web.OPEN_PATH = os.path.join(root, "merge_open.json")
+        board_access.PRIVATE_PATH = os.path.join(root, "board_private.json")
+        review_board.REVIEW_SUBS_PATH = os.path.join(root, "review_subs.json")
         console.NOTES_PATH = os.path.join(root, "notes.json")
         console.PEOPLE_PATH = os.path.join(root, "people.json")
         users = {"ou_admin": {"open_id": "ou_admin", "name": "管理员", "role": "admin"},
@@ -135,6 +140,34 @@ class BoardsApiTest(unittest.TestCase):
         self.assertEqual(report["older"], "2026-11-03")
         self.assertEqual(self.user.get("/api/v1/reviews/days/2026-11-04/nobody").status_code, 404)
         self.assertEqual(self.user.get("/api/v1/reviews/people/..%2Fetc").status_code, 404)
+
+    def test_review_mine_only(self) -> None:
+        self.seed_reviews()
+        day = os.path.join(review_board.REVIEW_DIR, "2026-11-04")
+        self.write(os.path.join(day, "tongshi.json"), {"name": "同事", "git_author": "tongshi", "status": "empty", "commits": []})
+        ports = lambda client: [s["port"] for s in client.get("/api/v1/sites").json()["sites"]]
+        # 默认关着：所有人都看得到所有人
+        self.assertEqual(len(self.user.get("/api/v1/reviews/days").json()["people"]), 2)
+        self.assertEqual(self.user.post("/api/v1/admin/sites", json={"action": "private", "port": "/review", "on": True}).status_code, 403)
+        sites = self.admin.post("/api/v1/admin/sites", json={"action": "private", "port": "/review", "on": True}).json()["sites"]
+        self.assertTrue(sites[0]["private"])
+        self.assertEqual(self.admin.post("/api/v1/admin/sites", json={"action": "private", "port": "/wish", "on": True}).status_code, 400)
+        # 开了、自己不在名单里：看板不显示，接口 403
+        self.assertNotIn("/review", ports(self.user))
+        self.assertEqual(self.user.get("/api/v1/reviews/days").status_code, 403)
+        # 进了名单：只看得到自己的
+        self.write(review_board.REVIEW_SUBS_PATH, {"subs": [{"name": "同事", "git_author": "tongshi", "open_id": "ou_user"},
+                                                         {"name": "朱辉", "git_author": "zhuhui", "open_id": "ou_zh"}]})
+        self.assertIn("/review", ports(self.user))
+        mine = self.user.get("/api/v1/reviews/days").json()
+        self.assertEqual(([p["file"] for p in mine["people"]], mine["dates"], mine["mine_only"]), (["tongshi"], ["2026-11-04"], True))
+        self.assertEqual(self.user.get("/api/v1/reviews/days/2026-11-04/zhuhui").status_code, 403)
+        self.assertEqual(self.user.get("/api/v1/reviews/people/zhuhui").status_code, 403)
+        self.assertEqual(self.user.get("/api/v1/reviews/days/2026-11-04/tongshi").status_code, 200)
+        # 管理员不受影响
+        self.assertEqual(len(self.admin.get("/api/v1/reviews/days").json()["people"]), 2)
+        self.admin.post("/api/v1/admin/sites", json={"action": "private", "port": "/review", "on": False})
+        self.assertEqual(len(self.user.get("/api/v1/reviews/days").json()["people"]), 2)
 
     # ---------- 合并确认 ----------
 

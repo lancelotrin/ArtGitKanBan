@@ -10,6 +10,17 @@ const WISH_STATUS: Record<string, string> = { open: "待接", doing: "进行中"
 
 function Sites() {
   const { data, error } = useSites();
+  const client = useQueryClient();
+  const toast = useToast();
+  const setPrivate = async (port: string, on: boolean) => {
+    try {
+      await adminPost("sites", { action: "private", port, on });
+      await client.invalidateQueries({ queryKey: ["sites"] });
+      toast(on ? "已开启：普通用户只看得到自己的" : "已关闭：所有人都能看");
+    } catch (e) {
+      toast((e as Error).message || "没成功", true);
+    }
+  };
   return (
     <section>
       <h2>网站</h2>
@@ -24,6 +35,12 @@ function Sites() {
             </div>
             <div className="site-desc">{site.desc}</div>
             <div className="site-url">{site.url}</div>
+            {site.private !== undefined && (
+              <label className="site-private" title={site.private_note}>
+                <input type="checkbox" checked={site.private} onChange={(e) => setPrivate(site.port, e.target.checked)} />
+                只看自己的<span className="meta">{site.private_note}</span>
+              </label>
+            )}
             <div className="row">
               <Link className="btnlink primary" to={site.port + "/"}>打开</Link>
               <button type="button" className="btnlink" onClick={() => navigator.clipboard?.writeText(site.url)}>复制地址</button>

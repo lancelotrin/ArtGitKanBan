@@ -11,6 +11,7 @@ import re
 from common.paths import DATA_DIR
 
 REVIEW_DIR = os.path.join(DATA_DIR, "reviews")
+REVIEW_SUBS_PATH = os.path.join(DATA_DIR, "review_subs.json")  # 复盘名单，机器人和后台维护
 DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 NAME_PATTERN = re.compile(r"^[A-Za-z0-9_.\-\u4e00-\u9fff]{1,40}$")
 FEISHU_LINK = re.compile(r"^https://project\.feishu\.cn/\w+/(story|issue)/detail/\d+$")
@@ -80,6 +81,28 @@ def render_diff(text: str) -> str:
             klass = ""
         rows.append(f'<span class="{klass}">{escaped}</span>' if klass else escaped)
     return f'<pre class="diffpre">{"".join(rows)}</pre>'
+
+
+def file_name(author: str) -> str:
+    """和 bot/echo_bot.py 的 review_file_name 一致：git 作者名 -> 复盘文件名。"""
+    return re.sub(r"[^A-Za-z0-9_.\-\u4e00-\u9fff]", "_", author or "")[:40] or "_"
+
+
+def own_files(user: dict) -> set:
+    """这个人在复盘名单里对应的文件名：按飞书 open_id 认，名单里没记 open_id 的按姓名认。"""
+    try:
+        with open(REVIEW_SUBS_PATH, encoding="utf-8") as stream:
+            subs = (json.load(stream) or {}).get("subs") or []
+    except (OSError, ValueError, AttributeError):
+        return set()
+    open_id, name = user.get("open_id") or "", user.get("name") or ""
+    files = set()
+    for sub in subs:
+        if not isinstance(sub, dict) or not sub.get("git_author"):
+            continue
+        if (sub.get("open_id") and sub["open_id"] == open_id) or (not sub.get("open_id") and name and sub.get("name") == name):
+            files.add(file_name(str(sub["git_author"])))
+    return files
 
 
 def list_dates() -> list:

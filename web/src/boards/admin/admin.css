@@ -106,3 +106,5 @@
   .admin-page .side { width: 64px; }
   .admin-page .brand div, .admin-page .side nav a span, .admin-page .side nav .group, .admin-page .side-foot { display: none; }
 }
+.admin-page .site-private { display: flex; align-items: baseline; gap: 6px; margin: 8px 0; font-size: 13px; cursor: pointer; flex-wrap: wrap; }
+.admin-page .site-private .meta { margin: 0; flex-basis: 100%; padding-left: 22px; }

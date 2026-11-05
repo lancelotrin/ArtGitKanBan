@@ -15,8 +15,8 @@ def me(user: dict = Depends(current_user)) -> dict:
 
 
 @router.get("/sites", operation_id="list_sites", summary="大豆开的内网子站")
-def sites(_user: dict = Depends(current_user)) -> dict:
-    return console.sites_view()
+def sites(user: dict = Depends(current_user)) -> dict:
+    return console.sites_view(user)
 
 
 @router.get("/auth/login-info", operation_id="login_info", summary="登录页要显示的东西（不用登录）")

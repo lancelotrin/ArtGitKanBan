@@ -12,7 +12,7 @@ interface Person {
   tags: string[]; pill: Pill; summary_html: string;
 }
 interface DayView {
-  dates: string[]; date: string; weekday?: string; older?: string; newer?: string; latest?: string; people: Person[];
+  dates: string[]; date: string; weekday?: string; older?: string; newer?: string; latest?: string; people: Person[]; mine_only?: boolean;
   filters?: { key: string; text: string; count: number }[];
   stats?: { people: number; commits: number; risk_people: number; bomb_people: number };
 }
@@ -84,7 +84,10 @@ function DayPage() {
   const hero = (
     <>
       <h1>{data.date} 复盘</h1>
-      <div className="hsub">每天 0 点复盘前一天 main 和 CBT2_bugfix 上已推送的提交。内容来自真实 diff，隐患只写有具体依据的；炸线是「疑似」，请当事人确认。</div>
+      <div className="hsub">
+        {data.mine_only && <b>只显示你自己的复盘。</b>}
+        每天 0 点复盘前一天 main 和 CBT2_bugfix 上已推送的提交。内容来自真实 diff，隐患只写有具体依据的；炸线是「疑似」，请当事人确认。
+      </div>
     </>
   );
   return (
