@@ -7,7 +7,7 @@ import { usePageTitle } from "../../lib/usePageTitle";
 import "./merge.css";
 
 // 和 backend/routers/merge.py 对应。单个会话的评审页 /merge/s/<id>/ 是 MergeReviewPortable 自带的页面，整页跳过去。
-interface Session { id: string; repo: string; date: string; ours: string; theirs: string; files: number; decided: number; source: string }
+interface Session { id: string; repo: string; date: string; ours: string; theirs: string; files: number; decided: number; source: string; open: boolean }
 interface Project { repo: string; ok: boolean; merging: boolean; conflicts: number; branch: string; incoming: string; error: string }
 
 const sessionUrl = (id: string) => `/merge/s/${encodeURIComponent(id)}/`;
@@ -70,7 +70,7 @@ function Board() {
         <p className="muted">
           每次 merge 冲突一个会话：大家逐个文件选“当前分支 / 合入分支 / 两边都要”，最后由负责人在仓库那台机器上 <code>merge_review.py plan / apply</code>。
         </p>
-        <div className="actions">
+        {canManage && <div className="actions">
           <button className="primary" disabled={!!busy} onClick={() => fileInput.current?.click()}>⬆ 上传会话</button>
           <input ref={fileInput} type="file" accept=".zip,.json" hidden
             onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) upload(f); }} />
@@ -79,8 +79,8 @@ function Board() {
               🔍 检查本地工程 merge
             </button>
           )}
-        </div>
-        <p className="muted" style={{ marginTop: -14, fontSize: 12 }}>上传：把 sessions 下的会话目录整个打成 zip（或只传 snapshot.json）。</p>
+        </div>}
+        {canManage && <p className="muted" style={{ marginTop: -14, fontSize: 12 }}>上传：把 sessions 下的会话目录整个打成 zip（或只传 snapshot.json）。勾“开放”的会话普通用户才看得到。</p>}
 
         {canManage && (
           <section className="panel" id="projects" ref={projectsRef}>
@@ -132,11 +132,11 @@ function Board() {
           <h2>会话</h2>
           {sessions.error ? <div className="empty">{sessions.error.message}</div>
             : !sessions.data ? <div className="empty">正在读取…</div>
-              : !sessions.data.sessions.length ? <div className="empty">还没有会话。上传一个，或者检查本地工程采集。</div>
+              : !sessions.data.sessions.length ? <div className="empty">{canManage ? "还没有会话。上传一个，或者检查本地工程采集。" : "管理员还没开放会话。"}</div>
                 : (
                   <table>
                     <tbody>
-                      <tr><th>分支</th><th className="hide-sm">仓库</th><th>采集日期</th><th>已选择</th><th></th></tr>
+                      <tr><th>分支</th><th className="hide-sm">仓库</th><th>采集日期</th><th>已选择</th>{canManage && <th>开放</th>}<th></th></tr>
                       {sessions.data.sessions.map((s) => {
                         const pct = s.files ? Math.floor((100 * s.decided) / s.files) : 0;
                         return (
@@ -148,6 +148,18 @@ function Board() {
                             <td className="mono hide-sm">{s.repo}</td>
                             <td>{s.date}</td>
                             <td>{s.decided} / {s.files}<div className="bar"><i style={{ width: pct + "%" }} /></div></td>
+                            {canManage && (
+                              <td>
+                                <input type="checkbox" checked={s.open} disabled={!!busy} title="开放给普通用户"
+                                  onChange={(e) => {
+                                    const open = e.target.checked;
+                                    run("open" + s.id, async () => {
+                                      await post(`/merge/sessions/${encodeURIComponent(s.id)}/open`, { open });
+                                      await client.invalidateQueries({ queryKey: ["merge-sessions"] });
+                                    });
+                                  }} />
+                              </td>
+                            )}
                             <td>
                               <a className="btn" href={sessionUrl(s.id)}>打开</a>{" "}
                               {canManage && (

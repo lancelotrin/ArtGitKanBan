@@ -1,7 +1,7 @@
 """合并确认 API：会话列表、上传会话、本地工程（检查 / 采集 / 增删）。逻辑都在 merge_web.py。
 
 单个会话的评审页 /merge/s/<会话>/ 仍是 MergeReviewPortable 自带的页面（它要能脱离大豆单独跑），不在这里。
-本地工程相关的操作只有管理员能做。
+本地工程、上传、删除、开放会话只有管理员能做；普通用户只看得到管理员开放的会话（merge_open.json），没开放就什么都看不到。
 """
 import os
 import shutil
@@ -23,6 +23,10 @@ class RepoBody(BaseModel):
     repo: str = Field(min_length=1, description="工程路径")
 
 
+class OpenBody(BaseModel):
+    open: bool = Field(description="是否开放给普通用户")
+
+
 class CaptureBody(RepoBody):
     replay_base: str = Field("", description="（可选）squash/每日同步时的已同步基线提交号")
 
@@ -38,12 +42,27 @@ ERRORS = (ValueError, UnicodeError, KeyError, OSError, subprocess.SubprocessErro
 
 @router.get("/sessions", operation_id="list_merge_sessions", summary="所有合并确认会话和选择进度")
 def list_sessions(user: dict = Depends(current_user)) -> dict:
-    return {"sessions": merge_web.list_sessions(), "can_manage": user.get("role") == "admin"}
+    is_admin = user.get("role") == "admin"
+    opened = set(merge_web.load_open())
+    sessions = [dict(row, open=row["id"] in opened) for row in merge_web.list_sessions()]
+    if not is_admin:
+        sessions = [row for row in sessions if row["open"]]
+    return {"sessions": sessions, "can_manage": is_admin}
+
+
+@router.post("/sessions/{session_id}/open", operation_id="set_merge_session_open", dependencies=[Depends(same_origin)],
+             summary="开放 / 收回会话给普通用户")
+def set_session_open(session_id: str, body: OpenBody, _user: dict = Depends(admin_user)) -> dict:
+    try:
+        ids = merge_web.set_open(session_id, body.open)
+    except ERRORS as error:
+        raise failed(error)
+    return {"open": ids}
 
 
 @router.post("/sessions/upload", operation_id="upload_merge_session", dependencies=[Depends(same_origin)],
              summary="上传会话：请求体是会话目录打的 zip，或 snapshot.json")
-async def upload_session(request: Request, _user: dict = Depends(current_user)) -> dict:
+async def upload_session(request: Request, _user: dict = Depends(admin_user)) -> dict:
     raw = await request.body()
     if not 0 < len(raw) <= merge_web.MAX_UPLOAD:
         raise HTTPException(status_code=400, detail={"message": "请求大小不对" if raw else "没有内容"})
@@ -62,6 +81,7 @@ def delete_session(session_id: str, _user: dict = Depends(admin_user)) -> dict:
         with merge_web._lock:
             merge_web._handlers.pop(str(target), None)
         shutil.rmtree(target)
+        merge_web.save_open([s for s in merge_web.load_open() if s != session_id])
     except ERRORS as error:
         raise failed(error)
     return {"message": f"已删除 {session_id}。"}

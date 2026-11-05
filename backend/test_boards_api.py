@@ -33,6 +33,7 @@ class BoardsApiTest(unittest.TestCase):
             (auth, "USERS_PATH"): auth.USERS_PATH, (auth, "SESSIONS_PATH"): auth.SESSIONS_PATH,
             (bomb_board, "HISTORY_PATH"): bomb_board.HISTORY_PATH, (review_board, "REVIEW_DIR"): review_board.REVIEW_DIR,
             (merge_web, "SESSIONS_DIR"): merge_web.SESSIONS_DIR, (merge_web, "PROJECTS_PATH"): merge_web.PROJECTS_PATH,
+            (merge_web, "OPEN_PATH"): merge_web.OPEN_PATH,
             (console, "NOTES_PATH"): console.NOTES_PATH, (console, "PEOPLE_PATH"): console.PEOPLE_PATH,
         }
         auth.USERS_PATH = os.path.join(root, "users.json")
@@ -41,6 +42,7 @@ class BoardsApiTest(unittest.TestCase):
         review_board.REVIEW_DIR = os.path.join(root, "reviews")
         merge_web.SESSIONS_DIR = Path(root) / "sessions"
         merge_web.PROJECTS_PATH = os.path.join(root, "merge_projects.json")
+        merge_web.OPEN_PATH = os.path.join(root, "merge_open.json")
         console.NOTES_PATH = os.path.join(root, "notes.json")
         console.PEOPLE_PATH = os.path.join(root, "people.json")
         users = {"ou_admin": {"open_id": "ou_admin", "name": "管理员", "role": "admin"},
@@ -150,10 +152,30 @@ class BoardsApiTest(unittest.TestCase):
         self.assertEqual(self.admin.post("/api/v1/merge/projects/remove", json={"repo": self.tmp.name}).json()["projects"], [])
 
     def test_merge_upload_rejects_garbage(self) -> None:
-        bad = self.user.post("/api/v1/merge/sessions/upload", content=b"not a zip", headers={"Content-Type": "application/zip"})
+        self.assertEqual(self.user.post("/api/v1/merge/sessions/upload", content=b"x").status_code, 403)
+        bad = self.admin.post("/api/v1/merge/sessions/upload", content=b"not a zip", headers={"Content-Type": "application/zip"})
         self.assertEqual(bad.status_code, 400)
         self.assertIn("snapshot", bad.json()["message"])
         self.assertEqual(self.admin.delete("/api/v1/merge/sessions/nope").status_code, 404)
+
+    def test_merge_only_open_sessions_for_users(self) -> None:
+        for name in ("s1", "s2"):
+            path = merge_web.SESSIONS_DIR / name
+            path.mkdir(parents=True)
+            (path / "snapshot.json").write_text(json.dumps({"id": name, "files": []}), encoding="utf-8")
+        ids = lambda client: [row["id"] for row in client.get("/api/v1/merge/sessions").json()["sessions"]]
+        self.assertEqual(ids(self.user), [])
+        self.assertEqual(sorted(ids(self.admin)), ["s1", "s2"])
+        self.assertEqual(self.user.post("/api/v1/merge/sessions/s1/open", json={"open": True}).status_code, 403)
+        self.assertEqual(self.admin.post("/api/v1/merge/sessions/s1/open", json={"open": True}).json()["open"], ["s1"])
+        self.assertEqual(ids(self.user), ["s1"])
+        self.assertEqual(self.admin.post("/api/v1/merge/sessions/nope/open", json={"open": True}).status_code, 404)
+        self.assertTrue(merge_web.can_view({"role": "user"}, "s1"))
+        self.assertFalse(merge_web.can_view({"role": "user"}, "s2"))
+        self.assertTrue(merge_web.can_view({"role": "admin"}, "s2"))
+        self.assertFalse(merge_web.can_view(None, "s1"))
+        self.admin.delete("/api/v1/merge/sessions/s1")
+        self.assertEqual(merge_web.load_open(), [])
 
     # ---------- 后台管理 ----------
 

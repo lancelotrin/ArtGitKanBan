@@ -29,6 +29,7 @@ import server as review_server  # noqa: E402
 
 SESSIONS_DIR = Path(TOOL_DIR) / "sessions"
 PROJECTS_PATH = os.path.join(BOT_DIR, "merge_projects.json")
+OPEN_PATH = os.path.join(BOT_DIR, "merge_open.json")  # 管理员开放给普通用户的会话；没列进来的普通用户看不到
 SESSION_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\-]{0,80}$")
 MAX_UPLOAD = 300 * 1024 * 1024
 
@@ -52,6 +53,40 @@ def save_projects(projects: list) -> None:
     with open(tmp, "w", encoding="utf-8") as stream:
         json.dump(projects, stream, ensure_ascii=False, indent=2)
     os.replace(tmp, PROJECTS_PATH)
+
+
+# ---------- 开放给普通用户的会话 ----------
+
+def load_open() -> list:
+    try:
+        with open(OPEN_PATH, encoding="utf-8") as stream:
+            data = json.load(stream)
+    except (OSError, ValueError):
+        return []
+    return [s for s in data if isinstance(s, str)] if isinstance(data, list) else []
+
+
+def save_open(session_ids: list) -> None:
+    tmp = OPEN_PATH + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as stream:
+        json.dump(session_ids, stream, ensure_ascii=False, indent=2)
+    os.replace(tmp, OPEN_PATH)
+
+
+def set_open(session_id: str, is_open: bool) -> list:
+    session_dir(session_id)  # 会话得存在
+    ids = [s for s in load_open() if s != session_id]
+    if is_open:
+        ids.append(session_id)
+    save_open(ids)
+    return ids
+
+
+def can_view(user, session_id: str) -> bool:
+    """管理员看全部；普通用户只能看管理员开放的会话。"""
+    if not user:
+        return False
+    return user.get("role") == "admin" or session_id in load_open()
 
 
 def git(repo: str, *args) -> subprocess.CompletedProcess:
@@ -239,6 +274,9 @@ class MergeHandler(BaseHTTPRequestHandler):
             self.send_header("Location", match.group(1) + "/")
             self.send_header("Content-Length", "0")
             self.end_headers()
+            return
+        if not can_view(getattr(self, "auth_user", None), match.group(1)):
+            self.send_json({"message": "这个会话管理员没开放给你。"}, 403)
             return
         try:
             handler_class = session_handler(match.group(1))

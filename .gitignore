@@ -36,6 +36,7 @@ last_shader.json
 
 # 合并确认
 merge_projects.json
+merge_open.json
 MergeReviewPortable/sessions/
 MergeReviewPortable/run/
 
