@@ -1,0 +1,41 @@
+{
+  "_说明": "初稿，来源：新人入职指引(美术)。消息里包含任一 keywords 就回复 answer，按顺序匹配第一条；都没匹配上再去搜文档。",
+  "source_url": "https://rcnc3bm8lc5c.feishu.cn/wiki/ZWsFwjyVvi9R2Zkta5Fcl6drnTg",
+  "items": [
+    {
+      "id": "account",
+      "keywords": ["账号", "账户", "密码申请", "开权限", "找谁"],
+      "answer": "项目拉取的账号密码，找【待填：负责人名字】申请。\n详见入职指引第 1 节：https://rcnc3bm8lc5c.feishu.cn/wiki/ZWsFwjyVvi9R2Zkta5Fcl6drnTg"
+    },
+    {
+      "id": "repo",
+      "keywords": ["仓库", "工程地址", "项目地址", "git地址", "拉项目", "拉工程", "拉取", "clone"],
+      "answer": "新人拉这个工程地址：\nhttp://10.234.80.148/pie/onepiece.git\n（旧地址 pieres.git 是以前的资源库，新人不用拉）\n账号密码还没有的话，先申请账号。"
+    },
+    {
+      "id": "gitextensions",
+      "keywords": ["gitextensions", "git extensions", "git怎么用", "git操作", "提交代码", "提交资源"],
+      "answer": "GitExtensions 常用操作看这篇：\nhttps://rcnc3bm8lc5c.feishu.cn/wiki/VxLsw6YWWiFrMok0RHvcWaGRnNb"
+    },
+    {
+      "id": "git_install",
+      "keywords": ["git", "装git"],
+      "answer": "安装 Git for Windows 2.50.1（64 位），装完要重启电脑。\n安装包 Git-2.50.1-64-bit.exe 在入职指引第 0 节的附件里：https://rcnc3bm8lc5c.feishu.cn/wiki/ZWsFwjyVvi9R2Zkta5Fcl6drnTg\n日常操作看 GitExtensions 说明：https://rcnc3bm8lc5c.feishu.cn/wiki/VxLsw6YWWiFrMok0RHvcWaGRnNb"
+    },
+    {
+      "id": "unity",
+      "keywords": ["unity", "引擎版本", "unityhub"],
+      "answer": "Unity 版本：2022.3.62f3\n复制下面这行到浏览器打开，会自动用 UnityHub 安装：\nunityhub://2022.3.62f3/96770f904ca7"
+    },
+    {
+      "id": "share_drive",
+      "keywords": ["共享盘", "公共盘", "共享文件夹", "资产库", "10.234.32.16", "圆周率工作室"],
+      "answer": "共享盘地址：\\\\10.234.32.16\\圆周率工作室\n第一次用要先在 Windows「凭据管理器」里添加凭据，用户名和密码以及截图步骤见入职指引第 2 节：https://rcnc3bm8lc5c.feishu.cn/wiki/ZWsFwjyVvi9R2Zkta5Fcl6drnTg\n里面「旧」是以前遗留的资产库，「新」是重新搭建的资产库。"
+    },
+    {
+      "id": "onboarding",
+      "keywords": ["入职", "新人", "要装什么", "装什么", "装哪些", "安装", "软件", "环境"],
+      "answer": "新人入职按这几步：\n0. 装软件：Git for Windows 2.50.1（装完重启）、Unity 2022.3.62f3\n1. 申请项目账号，拉工程：http://10.234.80.148/pie/onepiece.git\n2. 配置共享盘：\\\\10.234.32.16\\圆周率工作室\n完整步骤和截图：https://rcnc3bm8lc5c.feishu.cn/wiki/ZWsFwjyVvi9R2Zkta5Fcl6drnTg\n每一步都可以单独问我，比如「@大豆 共享盘」"
+    }
+  ]
+}

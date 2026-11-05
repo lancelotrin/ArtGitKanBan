@@ -1,0 +1,8 @@
+{
+  "items": [
+    {
+      "question": "角色模型在哪个路径",
+      "fact": "在 Assets/Dependences/Character 下，模型在 Assets/Dependences/Character/Model/Role"
+    }
+  ]
+}

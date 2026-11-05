@@ -1,0 +1,57 @@
+{
+  "told": [
+    "19c8b8750ea",
+    "124c18cd323",
+    "fc3a737170d",
+    "5c5ac48ec8a",
+    "29c24e3990c",
+    "ec4273a9895",
+    "fd05e0eed23",
+    "697242bb42e",
+    "aad30d19c09",
+    "cb2bcfdff50",
+    "b404ff1f4ba"
+  ],
+  "last_at": "2026-11-05T10:34:22+08:00",
+  "last_result": "查了最近 2 天 160 个合并，新报 0 条。忽略路径滤掉 13 个文件。",
+  "run_requested": false,
+  "next_at": "2026-11-05T11:04:22+08:00",
+  "enabled": true,
+  "minutes": 30,
+  "days": 2,
+  "recent": [
+    {
+      "at": "2026-11-04T19:32:40+08:00",
+      "sent": true,
+      "text": "**main** `cb2bcfdff50` 11-04 19:20 **gexianglin** 合并，丢了 2 个文件的修改：\n· `Crocodile/Mesh/FX_Crocodile_Ground_01.FBX.meta`（还丢着）丢的是：对面那侧的修改\n· `Crocodile/Mesh/Fx_Role_Crocodile_UL_02.FBX.meta`（还丢着）丢的是：对面那侧的修改\n\n**main** `b404ff1f4ba` 11-04 19:19 **gexianglin** 合并，丢了 147 个文件的修改：\n· `.fork/custom-commands.json`（还丢着）丢的是：gexianglin 11-04 12:20「Fork 支持 reset hard」`74fa5d22edb`；gexianglin 11-04 10:53「Fork 支持 reset hard」`c466f92089a`\n· `BattleLibrary/output/BattleLibrary.dll`（还丢着）丢的是：gexianglin 11-04 17:50「Auto update BattleLibrary output: 2026-1」`eacac29494c`\n· `BattleLibrary/output/BattleLibrary.so`（还丢着）丢的是：gexianglin 11-04 17:50「Auto update BattleLibrary output: 2026-1」`eacac29494c`\n· `Crocodile/Timeline/UL_Role_Crocodile.prefab`（还丢着）丢的是：zengwei 11-03 15:14「奥义小黑盒修改」`0a091076018`\n· `Scene/OP_Baratie03/OP_Baratie03.unity`（还丢着）丢的是：zhanghaipeng 11-04 15:48「【scene，asset】OP_Baratie03场景重新烘焙 PerfectC」`71cc9f7c1b1`\n· `Shader/ShaderVariants/ShaderVariantWarmupList.txt`（还丢着）丢的是：gexianglin 11-03 15:20「从shader分支合并」`449f54363bc`\n· `Shader/ShaderVariants/ShaderVariantWarmupList_Battle.txt`（还丢着）丢的是：gexianglin 11-03 15:20「从shader分支合并」`449f54363bc`\n· `Shader/ShaderVariants/ShaderVariantWarmupList_Resources.txt`（还丢着）丢的是：gexianglin 11-03 15:20「从shader分支合并」`449f54363bc`\n· 另外还有 139 个文件\n\n判断依据：某文件在被合进来的那一侧改过，合并结果却和另一侧完全一样，说明那侧修改被整份丢掉（多半是解冲突选了「用我的」）。也可能是故意保留，所以算疑似，请当事人确认。"
+    },
+    {
+      "at": "2026-11-04T17:17:14+08:00",
+      "sent": true,
+      "text": "**CBT2_bugfix** `aad30d19c09` 11-04 16:50 **guoyanchen** 合并，丢了 1 个文件的修改：\n· `Assets/DataTable/DamageTable.xml`（之后又改过，要人工看）丢的是：liangkangshuo 11-04 16:22「肉鸽词条冷却」`79eb2106136`\n\n判断依据：某文件在被合进来的那一侧改过，合并结果却和另一侧完全一样，说明那侧修改被整份丢掉（多半是解冲突选了「用我的」）。也可能是故意保留，所以算疑似，请当事人确认。"
+    },
+    {
+      "at": "2026-11-04T16:44:45+08:00",
+      "sent": true,
+      "text": "**CBT2_bugfix** `697242bb42e` 11-04 16:23 **liangkangshuo** 合并，丢了 2 个文件的修改：\n· `StreamingAssets/Battle/Buff.bytes`（之后又改过，要人工看）丢的是：liangkangshuo 11-04 16:22「肉鸽词条冷却」`79eb2106136`\n· `StreamingAssets/Battle/BuffPVP.bytes`（之后又改过，要人工看）丢的是：liangkangshuo 11-04 16:22「肉鸽词条冷却」`79eb2106136`\n\n判断依据：某文件在被合进来的那一侧改过，合并结果却和另一侧完全一样，说明那侧修改被整份丢掉（多半是解冲突选了「用我的」）。也可能是故意保留，所以算疑似，请当事人确认。"
+    },
+    {
+      "at": "2026-11-04T11:53:23+08:00",
+      "sent": true,
+      "text": "**CBT2_bugfix** `fd05e0eed23` 11-04 11:37 **guoyanchen** 合并，丢了 2 个文件的修改：\n· `StreamingAssets/Battle/Buff.bytes`（之后又改过，要人工看）丢的是：guoyanchen 11-04 11:35「训练场风格点buff修正」`24ff547713b`\n· `StreamingAssets/Battle/BuffPVP.bytes`（之后又改过，要人工看）丢的是：guoyanchen 11-04 11:35「训练场风格点buff修正」`24ff547713b`\n\n判断依据：某文件在被合进来的那一侧改过，合并结果却和另一侧完全一样，说明那侧修改被整份丢掉（多半是解冲突选了「用我的」）。也可能是故意保留，所以算疑似，请当事人确认。"
+    },
+    {
+      "at": "2026-11-04T10:16:40+08:00",
+      "sent": true,
+      "text": "**main** `ec4273a9895` 11-03 19:15 **linxuan** 合并，丢了 105 个文件的修改：\n· `DL/Timeline/CS_Chap01_DL.prefab`（还丢着）丢的是：linxuan 11-02 17:58「cutscene制作方式调整」`7a506b4cfaf`\n· `Scene01/Timeline/CS_Chap01_SC01.prefab`（还丢着）丢的是：linxuan 11-02 17:58「cutscene制作方式调整」`7a506b4cfaf`\n· `Scene02/Timeline/CS_Chap01_SC02.prefab`（还丢着）丢的是：linxuan 11-02 17:58「cutscene制作方式调整」`7a506b4cfaf`\n· `Scene01/Profile/Cutscene_Fade_Profile.asset`（还丢着）丢的是：linxuan 11-02 17:58「cutscene制作方式调整」`7a506b4cfaf`\n· `Scene01/Profile/Cutscene_Vignette_Profile.asset`（还丢着）丢的是：linxuan 11-02 17:58「cutscene制作方式调整」`7a506b4cfaf`\n· `Scene01/Timeline/CS_Chap02_SC01.prefab`（还丢着）丢的是：linxuan 11-02 17:58「cutscene制作方式调整」`7a506b4cfaf`\n· `Scene02/Timeline/CS_Chap02_SC02.prefab`（之后又改过，要人工看）丢的是：linxuan 11-02 17:58「cutscene制作方式调整」`7a506b4cfaf`\n· `Scene05/Timeline/CS_Chap02_SC05.prefab`（还丢着）丢的是：linxuan 11-02 17:58「cutscene制作方式调整」`7a506b4cfaf`\n· 另外还有 97 个文件\n\n判断依据：某文件在被合进来的那一侧改过，合并结果却和另一侧完全一样，说明那侧修改被整份丢掉（多半是解冲突选了「用我的」）。也可能是故意保留，所以算疑似，请当事人确认。"
+    }
+  ],
+  "groups": [
+    "oc_87199fa15e8bc352fb9c928332d8528e",
+    "oc_d7aa3ebf93e3bf0dc5a1b4b6c3459737"
+  ],
+  "ignore_paths": [
+    "BattleLibrary/output/",
+    "Assets/DataTable/"
+  ]
+}

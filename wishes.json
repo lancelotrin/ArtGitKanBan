@@ -1,0 +1,62 @@
+{
+  "next_id": 8,
+  "wishes": [
+    {
+      "id": 1,
+      "title": "一键游戏完成",
+      "detail": "游戏直接做完上线",
+      "author": "朱辉",
+      "created_at": "2026-11-04T14:41:16+08:00",
+      "votes": [
+        "廖威"
+      ],
+      "status": "open",
+      "taker": "",
+      "taken_at": "",
+      "done_at": "",
+      "role": "其他"
+    },
+    {
+      "id": 4,
+      "title": "批量处理图片名字和图片尺寸",
+      "detail": "",
+      "author": "张琪",
+      "created_at": "2026-11-04T14:51:07+08:00",
+      "votes": [],
+      "status": "open",
+      "taker": "",
+      "taken_at": "",
+      "done_at": "",
+      "role": "美术"
+    },
+    {
+      "id": 5,
+      "title": "根据场景管线排期，自动同步到版本需求管理表里。",
+      "detail": "https://project.feishu.cn/0m47pa/userGantt/u3fBy6mvg?scope=workspaces&node=27843808 \n\nhttps://rcnc3bm8lc5c.feishu.cn/wiki/TlfwwzxHMiZyoKkv2upc4q07nsf?table=tblT9yQY1oysjV3l&view=vewf6fHFMg",
+      "author": "廖威",
+      "created_at": "2026-11-04T14:51:59+08:00",
+      "votes": [],
+      "status": "open",
+      "taker": "",
+      "taken_at": "",
+      "done_at": "",
+      "role": "美术"
+    },
+    {
+      "id": 6,
+      "title": "批量筛查图片多余空白尺寸，并裁掉多余空白或少量像素点内容",
+      "detail": "",
+      "author": "张琪",
+      "created_at": "2026-11-04T15:07:26+08:00",
+      "votes": [],
+      "status": "open",
+      "taker": "",
+      "taken_at": "",
+      "done_at": "",
+      "role": "美术"
+    }
+  ],
+  "settings": {
+    "allow_create": true
+  }
+}

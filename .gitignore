@@ -1,0 +1,32 @@
+# 数据库
+*.sqlite
+*.sqlite3
+*.db
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+
+# 数据缓存
+__pycache__/
+*.py[cod]
+*_cache.json
+
+# 敏感信息
+bilibili_cookie.txt
+bot_config.json
+
+# 日志
+*.log
+regress_out.txt
+
+# 运行时数据
+*_history.json
+*.jsonl
+reviews/
+review_state.json
+model_stats.json
+misses_handled.json
+last_shader.json
+
+# IDE
+.idea/

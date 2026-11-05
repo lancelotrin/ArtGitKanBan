@@ -1,0 +1,39 @@
+{
+  "enabled": false,
+  "interval_sec": 1800,
+  "rules": [
+    {
+      "path": "Assets/Bundle/Shader",
+      "exts": [
+        ".shader",
+        ".hlsl"
+      ]
+    }
+  ],
+  "seen": {
+    "main": "718b79c1ca8084939c34e175ac6f7c18ddcf3f86",
+    "CBT2_bugfix": "9cd6721dcc3dbf2de30a14097d10e7e56f4f9f00"
+  },
+  "next_at": "2026-11-02T21:10:36+08:00",
+  "revision": 12,
+  "last_result": "盯目录 · 最近 5 天\n`origin/main`：\n- `666f082bb82` 2026-11-02 15:09 zhuhui\n  【Shader】动效叠加纹理和溶解添加旋转 https://project.feishu.cn/0m47pa/story/detail/7153137775\n  Client/Assets/Bundle/Shader/URP_UVEffect_Manual_UIClip.shader\n  Client/Assets/Bundle/Shader/UVEffect_Manual_UI_Include.hlsl\n- `d3d39debd65` 2026-11-02 11:57 zhuhui\n  【Shader】角色Shader框架解耦 https://project.feishu.cn/0m47pa/story/detail/7142290293\n  Client/Assets/Bundle/Shader/Include/URP_Pixel.hlsl\n  Client/Assets/Bundle/Shader/Role/Include/CustomSha",
+  "last_at": "2026-11-04T10:13:30+08:00",
+  "run_requested": false,
+  "lookback_days": 5,
+  "told": {
+    "main": [
+      "666f082bb82",
+      "d3d39debd65",
+      "cc2ef7074cb",
+      "5f79056e73c",
+      "dd4391ee6a5"
+    ],
+    "CBT2_bugfix": [
+      "666f082bb82",
+      "d3d39debd65",
+      "5f79056e73c",
+      "dd4391ee6a5"
+    ]
+  },
+  "told_days": 5
+}
