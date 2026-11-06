@@ -3147,8 +3147,10 @@ def bomb_since(days: int) -> str:
     return start.isoformat(timespec="seconds")
 
 
-def scan_bomb(branches: list, days: int) -> tuple:
-    """返回 [(分支, 合并列表, 强推列表)], 查过的合并数, 出错说明。"""
+def scan_bomb(branches: list, days: int, bases: dict = None, tips: dict = None) -> tuple:
+    """返回 [(分支, 合并列表, 强推列表)], 查过的合并数, 出错说明。
+
+    bases={分支: 上次扫到的最新提交} 时只查那之后新进来的合并；tips 传一个空 dict 进来，会填上这次各分支的最新提交。"""
     git_root = get_git_root()
     results = []
     scanned = 0
@@ -3158,8 +3160,12 @@ def scan_bomb(branches: list, days: int) -> tuple:
         if not fetch_ok:
             notes.append(sync_note)
         ref = git_ref(branch)
-        merges, count = bomb.scan_merges(bomb_git, ref, bomb_since(days))
-        scanned += count
+        merges, count = bomb.scan_merges(bomb_git, ref, bomb_since(days), (bases or {}).get(branch, ""))
+        if count < 0:
+            notes.append(f"{branch} 的合并记录没查到，下次从原位置再查")
+        elif tips is not None:
+            tips[branch] = bomb.tip_of(bomb_git, ref)
+        scanned += max(count, 0)
         results.append((branch, merges, bomb.scan_forced(bomb_git, ref)))
     return results, scanned, "；".join(notes)
 
@@ -3302,46 +3308,86 @@ def control_bomb(action: str, minutes=None, days=None, groups_text: str = "", ig
     return dict(bomb_view(), ok=True, message=message)
 
 
+BOMB_REMIND_HOURS = 4          # 没解决的旧炸线多久再提醒一次（bomb.json 里 remind_hours 可改）
+BOMB_REMIND_WORK_HOURS = (9, 21)  # 旧的只在白天再提醒；新发现的随时报
+
+
+def bomb_remind_due(state: dict, now: datetime.datetime) -> bool:
+    try:
+        hours = max(float(state.get("remind_hours") or BOMB_REMIND_HOURS), 0.5)
+    except (TypeError, ValueError):
+        hours = BOMB_REMIND_HOURS
+    if not BOMB_REMIND_WORK_HOURS[0] <= now.hour < BOMB_REMIND_WORK_HOURS[1]:
+        return False
+    try:
+        last = datetime.datetime.fromisoformat(str(state.get("last_remind_at") or ""))
+    except ValueError:
+        return True
+    return now - last >= datetime.timedelta(hours=hours)
+
+
+def bomb_board_url() -> str:
+    return review_web_base().rsplit("/review", 1)[0] + "/bomb/"
+
+
+def bomb_keys(results: list) -> list:
+    return [item["merge"] for _b, merges, _f in results for item in merges] + \
+           [f"force:{item['new']}" for _b, _m, forced in results for item in forced]
+
+
 def run_bomb_once(days: int) -> None:
+    """增量查新合并 → 新的先让 Codex 判断并记进看板 → 看板里所有没标记解决的拿来提醒。
+
+    新发现的马上报；之前报过、还没解决的按 remind_hours 白天再报，直接用看板记录，不重新查 git。"""
     state = load_bomb_state()
-    told = [str(item) for item in state.get("told") or []]
-    known = set(told)
+    known = {str(item) for item in state.get("told") or []}
     ignore_paths = bomb_ignore_paths(state)
-    results, scanned, note = scan_bomb(list(GIT_BRANCHES), days)
+    bases = {str(k): str(v) for k, v in (state.get("scan_tips") or {}).items() if v}
+    tips = {}
+    results, scanned, note = scan_bomb(list(GIT_BRANCHES), days, bases, tips)
     alerted, dropped = alert_bomb_results(results, ignore_paths)
-    fresh_keys = []
-    reports = []
-    fresh = []
-    for branch, merges, forced in alerted:
-        new_merges = [item for item in merges if item["merge"] not in known]
-        new_forced = [item for item in forced if f"force:{item['new']}" not in known]
-        if new_merges or new_forced:
-            reports.append(bomb.format_report(branch, new_merges, new_forced))
-            fresh.append((branch, new_merges, new_forced))
-        fresh_keys += [item["merge"] for item in new_merges] + [f"force:{item['new']}" for item in new_forced]
-    if fresh:
-        judge_bomb_results(fresh)
-        reports = [bomb.format_report(branch, merges, forced) for branch, merges, forced in fresh]
+    judge_bomb_results([(branch, [item for item in merges if item["merge"] not in known], forced)
+                        for branch, merges, forced in alerted])
+    record_bomb_history(results, list(known))
+    pending, _dropped_old = alert_bomb_results(bomb_board.open_results(), ignore_paths)
+    judge_bomb_results(pending)  # 旧记录缺判断的顺手补上（有缓存的不再调 Codex）
+    pending_keys = bomb_keys(pending)
+    fresh_keys = [key for key in pending_keys if key not in known]
+    old_keys = [key for key in pending_keys if key in known]
+    now = datetime.datetime.now(BEIJING_TZ)
+    remind = bool(old_keys) and bomb_remind_due(state, now)
     sent = True
-    now_text = datetime.datetime.now(BEIJING_TZ).isoformat(timespec="seconds")
+    if fresh_keys or remind:
+        intro_bits = []
+        if fresh_keys:
+            intro_bits.append(f"新发现 **{len(fresh_keys)}** 条")
+        if old_keys:
+            intro_bits.append(f"之前报过、还没标记解决 **{len(old_keys)}** 条")
+        intro = "，".join(intro_bits) + f"。处理完到 [炸线看板]({bomb_board_url()}) 点「标记已解决」，就不再提醒。"
+        card = bomb.build_card(BOMB_TITLE, intro, pending, bomb.BOMB_NOTE, bomb_people())
+        key = hashlib.sha1(("|".join(pending_keys) + now.strftime("%Y%m%d%H%M")).encode("utf-8")).hexdigest()[:12]
+        sent = send_bomb_alert(card, key)
+        body = intro + "\n\n" + "\n\n".join(bomb.format_report(b, m, f) for b, m, f in pending)
+    now_text = now.isoformat(timespec="seconds")
     with _bomb_lock:
         state = load_bomb_state()
-        if reports:
-            body = "\n\n".join(reports) + f"\n\n{bomb.BOMB_NOTE}"
-            key = hashlib.sha1("|".join(fresh_keys).encode("utf-8")).hexdigest()[:12]
-            sent = send_bomb_alert(bomb.build_card(BOMB_TITLE, "", fresh, bomb.BOMB_NOTE, bomb_people()), key)
+        if fresh_keys or remind:
             recent = [{"at": now_text, "sent": sent, "text": redact(body)[:4000]}] + list(state.get("recent") or [])
             state["recent"] = recent[:BOMB_RECENT_KEEP]
-        if sent:
-            told = [str(item) for item in state.get("told") or []]
-            state["told"] = list(dict.fromkeys(told + fresh_keys))[-BOMB_TOLD_KEEP:]
+            if sent:
+                told = [str(item) for item in state.get("told") or []]
+                state["told"] = list(dict.fromkeys(told + fresh_keys))[-BOMB_TOLD_KEEP:]
+                state["last_remind_at"] = now_text
+        state["scan_tips"] = dict(state.get("scan_tips") or {}, **{b: t for b, t in tips.items() if t})
         state["last_at"] = now_text
         skip = f"忽略路径滤掉 {dropped} 个文件。" if dropped else ""
-        state["last_result"] = f"查了最近 {days} 天 {scanned} 个合并，新报 {len(fresh_keys)} 条。{skip}{note}"[:300]
+        window = "从上次查到的位置起" if bases else f"最近 {days} 天"
+        state["last_result"] = (f"{window}查了 {scanned} 个合并，新发现 {len(fresh_keys)} 条，"
+                                f"没解决的 {len(old_keys)} 条{'（这次再提醒了）' if remind and sent else ''}。{skip}{note}")[:300]
         save_bomb_state(state)
-        told = state.get("told")
-    record_bomb_history(results, told)
-    log(f"[bomb] loop scanned={scanned} new={len(fresh_keys)} dropped={dropped} sent={sent}")
+    if sent and fresh_keys:
+        bomb_board.mark_alerted(fresh_keys)
+    log(f"[bomb] loop scanned={scanned} new={len(fresh_keys)} open={len(old_keys)} remind={remind} dropped={dropped} sent={sent}")
 
 
 def record_bomb_history(results: list, told, backfill: bool = False) -> None:

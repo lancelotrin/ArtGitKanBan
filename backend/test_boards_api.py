@@ -114,6 +114,19 @@ class BoardsApiTest(unittest.TestCase):
         self.assertIn("enabled", data["scan"])
         self.assertTrue(data["note"].startswith("判断依据"))
 
+    def test_resolve_bomb(self) -> None:
+        record = {"key": "merge:abc", "kind": "merge", "merge": "abc", "status": "还丢着", "at": "2026-11-04T10:00:00+08:00",
+                  "files": [{"path": "a/b.cs", "state": "还丢着", "commits": []}], "branches": ["main"]}
+        self.write(bomb_board.HISTORY_PATH, {"records": {"merge:abc": record}})
+        self.assertEqual(len(bomb_board.open_results()[0][1]), 1)
+        data = self.user.post("/api/v1/bombs/resolve", json={"key": "merge:abc", "resolved": True}).json()
+        self.assertTrue(data["records"][0]["resolved"])
+        self.assertTrue(data["records"][0]["resolved_by"])
+        self.assertEqual(bomb_board.open_results(), [])
+        data = self.user.post("/api/v1/bombs/resolve", json={"key": "merge:abc", "resolved": False}).json()
+        self.assertFalse(data["records"][0]["resolved"])
+        self.assertEqual(self.user.post("/api/v1/bombs/resolve", json={"key": "merge:nope"}).status_code, 404)
+
     # ---------- 复盘 ----------
 
     def seed_reviews(self) -> None:

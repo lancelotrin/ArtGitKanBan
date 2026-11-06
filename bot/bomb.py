@@ -118,6 +118,16 @@ def side_files(git, keep: str, lost: str) -> set:
     return {line.strip() for line in out.splitlines() if line.strip()} if ok else set()
 
 
+def commit_known(git, rev: str) -> bool:
+    ok, out = git(["rev-parse", "-q", "--verify", f"{rev}^{{commit}}"])
+    return bool(ok and out.strip())
+
+
+def tip_of(git, ref: str) -> str:
+    ok, out = git(["rev-parse", "-q", "--verify", f"{ref}^{{commit}}"])
+    return out.strip() if ok else ""
+
+
 def blob(git, rev: str, path: str) -> str:
     ok, out = git(["rev-parse", "-q", "--verify", f"{rev}:{path}"])
     return out.strip() if ok and out.strip() else ""
@@ -222,11 +232,17 @@ def merge_sides(subject: str, branch: str) -> tuple:
     return f"本地 {ours}", f"远端 {theirs}" if pulled else theirs
 
 
-def scan_merges(git, ref: str, since: str) -> tuple:
-    """返回 (疑似炸线列表, 查过的合并数)。"""
-    ok, out = git(["log", ref, "--merges", f"-n{MERGE_SCAN_LIMIT}", f"--since={since}",
+def scan_merges(git, ref: str, since: str, base: str = "") -> tuple:
+    """返回 (疑似炸线列表, 查过的合并数)。
+
+    给了 base（上次扫到的分支最新提交）就只查 base..ref 之间新进来的合并，不看时间；
+    这样晚推上来的旧合并也不会漏。base 不认识（比如被强推冲掉）时退回按 since 查。"""
+    window = [f"{base}..{ref}"] if base and commit_known(git, base) else [ref, f"--since={since}"]
+    ok, out = git(["log", *window, "--merges", f"-n{MERGE_SCAN_LIMIT}",
                    "--date=format:%m-%d %H:%M", "--pretty=format:%H|%P|%an|%ad|%aI|%s"])
-    rows = [line for line in out.splitlines() if line.strip()] if ok else []
+    if not ok:
+        return [], -1  # git 查失败：调用方别把「上次查到的位置」往前推
+    rows = [line for line in out.splitlines() if line.strip()]
     found = []
     for row in rows:
         parts = row.split("|", 5)

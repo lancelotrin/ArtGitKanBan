@@ -73,3 +73,15 @@
   .bomb-page .bolt { display:none; }
   .bomb-page .told { margin-left:0; }
 }
+
+/* 标记已解决 */
+.bomb-page .card.resolved { opacity: .62; }
+.bomb-page .resolve { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px dashed #e9ecef; font-size: 13px; }
+.bomb-page .resolve .again { color: #c92a2a; }
+.bomb-page .resolve .done { color: #2b8a3e; }
+.bomb-page .resolve .err { color: #c92a2a; }
+.bomb-page .resolve button { border-radius: 8px; padding: 5px 12px; font-size: 13px; cursor: pointer; border: 1px solid #ced4da; background: #fff; }
+.bomb-page .resolve button.primary { background: #2b8a3e; border-color: #2b8a3e; color: #fff; }
+.bomb-page .resolve button:disabled { opacity: .6; cursor: default; }
+.bomb-page .lb { margin-left: 8px; font-size: 12px; color: #868e96; }
+.bomb-page .judge { display: block; margin-top: 2px; color: #5f3dc4; }
