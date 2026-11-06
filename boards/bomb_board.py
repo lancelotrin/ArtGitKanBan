@@ -187,7 +187,7 @@ def open_results() -> list:
             merges.append({"merge": record.get("merge", ""), "author": record.get("author", ""),
                            "date": record.get("date", ""), "at": record.get("at", ""), "subject": record.get("subject", ""),
                            "count": int(record.get("count") or len(files)),
-                           "paths": list(record.get("paths") or [item.get("path") for item in files]), "files": files})
+                           "paths": list(record.get("paths") or []), "files": files})
     return [(branch, merges, forced) for branch, (merges, forced) in by_branch.items()]
 
 

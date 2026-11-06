@@ -71,7 +71,10 @@ def filter_merges_for_alert(merges: list, ignore_paths: list) -> tuple:
         new_item = dict(item)
         new_item["paths"] = remain_paths
         new_item["files"] = visible
-        new_item["count"] = len(remain_paths)
+        # 只有展开的几条路径（旧看板记录没存全部路径）时，总数只扣掉被忽略的，别按展开数算
+        full = bool(item.get("paths"))
+        new_item["count"] = len(remain_paths) if full else max(int(item.get("count") or 0) - (len(paths) - len(remain_paths)),
+                                                               len(remain_paths))
         kept.append(new_item)
     return kept, dropped
 
