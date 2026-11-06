@@ -524,6 +524,38 @@ def parse_content(message: dict) -> dict:
     return {}
 
 
+# 机器人自己是谁：启动时用 /bot/v3/info 查 open_id 和当前应用名。飞书后台改名（大豆 → 航海士 Nami）后，
+# 只按「大豆」认 @ 会全部落空，所以按 ID 认，「大豆」和当前应用名也都算。
+BOT_OPEN_ID = ""
+BOT_NAMES = ["大豆"]
+
+
+def load_bot_identity() -> None:
+    global BOT_OPEN_ID
+    try:
+        data = json.loads(run_cli(["api", "GET", "/open-apis/bot/v3/info", "--as", "bot"]))
+    except Exception as exc:
+        log(f"[start] 查机器人身份失败，只按名字认 @：{exc}")
+        return
+    info = data.get("data") or data.get("bot") or data
+    BOT_OPEN_ID = str(info.get("open_id") or "")
+    name = str(info.get("app_name") or "").strip()
+    if name and name not in BOT_NAMES:
+        BOT_NAMES.append(name)
+    log(f"[start] bot open_id={BOT_OPEN_ID or '-'} names={BOT_NAMES}")
+
+
+def is_bot_mention(name="", ident="") -> bool:
+    """这个 @ 是不是在 @ 机器人自己：按 open_id 认，名字兜底。"""
+    if isinstance(ident, dict):
+        ident = ident.get("open_id") or ""
+    ident = str(ident or "")
+    if BOT_OPEN_ID and ident == BOT_OPEN_ID:
+        return True
+    name = str(name or "")
+    return any(item in name for item in BOT_NAMES)
+
+
 def post_plain_text(node) -> str:
     """飞书 post / markdown 里 tag 可能是 text、md、code，不能只认 text。"""
     chunks = []
@@ -533,7 +565,7 @@ def post_plain_text(node) -> str:
             tag = str(item.get("tag") or "")
             if tag == "at":
                 name = str(item.get("user_name") or "")
-                if name and "大豆" not in name:
+                if name and not is_bot_mention(name, item.get("user_id")):
                     chunks.append(name)
                 return
             value = item.get("text")
@@ -569,15 +601,14 @@ def extract_text(message: dict) -> str:
         if not key:
             continue
         # @大豆 只是唤醒，不进正文；@同事 换回人名，「主程是 @某某」才记得住
-        text = text.replace(key, "" if (not name or "大豆" in name) else name)
+        text = text.replace(key, "" if (not name or is_bot_mention(name, mention.get("id"))) else name)
     return re.sub(r"@_user_\d+\s*", "", text).strip()
 
 
 def mentions_bot(message: dict) -> bool:
     """群聊是否 @ 了大豆（按 mention 名称 / post 的 at 标签判断）。"""
     for mention in message.get("mentions") or []:
-        name = str(mention.get("name") or "")
-        if "大豆" in name:
+        if is_bot_mention(mention.get("name"), mention.get("id")):
             return True
     data = parse_content(message)
     if message.get("message_type") == "post":
@@ -585,7 +616,7 @@ def mentions_bot(message: dict) -> bool:
             for item in row or []:
                 if item.get("tag") != "at":
                     continue
-                if "大豆" in str(item.get("user_name") or item.get("text") or ""):
+                if is_bot_mention(item.get("user_name") or item.get("text"), item.get("user_id")):
                     return True
     return False
 
@@ -7548,9 +7579,9 @@ def reminder_targets(message: dict) -> list:
     seen = set()
     for mention in message.get("mentions") or []:
         name = str(mention.get("name") or "")
-        if not name or "大豆" in name:
-            continue
         open_id = mention_open_id(mention)
+        if not name or is_bot_mention(name, open_id):
+            continue
         if not re.fullmatch(r"ou_[A-Za-z0-9]+", open_id) or open_id in seen:
             continue
         seen.add(open_id)
@@ -8042,6 +8073,7 @@ def main() -> None:
     if not os.path.isdir(PROJECT_ROOT):
         log(f"[start] 工程目录不存在：{PROJECT_ROOT}，设置 FEISHU_BOT_PROJECT_ROOT 指向 Client 目录")
     log(f"[start] project={PROJECT_ROOT}")
+    load_bot_identity()
     load_chat_state()
     log(f"[start] history_chats={len(CHAT_HISTORY)} sent={len(SENT_TEXT)}")
     threading.Thread(target=ref_index_loop, name="ref-index", daemon=True).start()
