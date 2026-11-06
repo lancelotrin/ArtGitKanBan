@@ -220,17 +220,30 @@ def scan_forced(git, ref: str) -> list:
     return found
 
 
-def _commit_line(line: str) -> str:
+def person_name(author: str, people: dict = None) -> str:
+    """git 作者名换成自检名单里的真名，找不到就原样。people={小写作者: {"name", "open_id"}}。"""
+    person = (people or {}).get(str(author or "").lower()) or {}
+    return person.get("name") or author
+
+
+def _person_mention(author: str, people: dict = None) -> str:
+    person = (people or {}).get(str(author or "").lower()) or {}
+    if person.get("open_id"):
+        return f"<at id={person['open_id']}></at>"
+    return f"**{person.get('name') or author}**"
+
+
+def _commit_line(line: str, people: dict = None) -> str:
     parts = line.split("|", 3)
     if len(parts) < 4:
         return line
     short, author, date, subject = parts
     subject = re.sub(r"\s*https?://\S+", "", subject).strip()
-    return f"{author} {date}「{subject[:40]}」`{short}`"
+    return f"{person_name(author, people)} {date}「{subject[:40]}」`{short}`"
 
 
-def _lost_whose(detail: dict) -> str:
-    return "；".join(_commit_line(line) for line in detail.get("commits") or []) or "对面那侧的修改"
+def _lost_whose(detail: dict, people: dict = None) -> str:
+    return "；".join(_commit_line(line, people) for line in detail.get("commits") or []) or "对面那侧的修改"
 
 
 def _short_path(path: str) -> str:
@@ -275,15 +288,16 @@ CARD_TABLES_MAX = 5  # 飞书卡片表格组件数量有限，超出的人并进
 CARD_COLUMNS = (("merge", "合并"), ("file", "文件"), ("state", "状态"), ("branch", "丢的分支"), ("whose", "丢的提交"))
 
 
-def _table_rows(items: list, with_author: bool = False) -> list:
+def _table_rows(items: list, with_author: bool = False, people: dict = None) -> list:
     rows = []
     for item in items:
         head = f"{item['merge']}\n{item['date']}"
         if with_author:
-            head = f"{item.get('author') or ''}\n{head}"
+            head = f"{person_name(item.get('author') or '', people)}\n{head}"
         for detail in item["files"]:
             rows.append({"merge": head, "file": _short_path(detail["path"]), "state": detail["state"],
-                         "branch": detail.get("lost_branch") or "对面那侧", "whose": _lost_whose(detail)})
+                         "branch": detail.get("lost_branch") or "对面那侧",
+                         "whose": _lost_whose(detail, people).replace("`", "")})
         if item["count"] > len(item["files"]):
             rows.append({"merge": head, "file": f"另外还有 {item['count'] - len(item['files'])} 个文件",
                          "state": "", "branch": "", "whose": "完整列表看炸线看板"})
@@ -301,8 +315,10 @@ def _table(rows: list) -> dict:
     }
 
 
-def build_card(title: str, intro: str, results: list, note: str = "") -> dict:
-    """飞书交互卡片（schema 2.0）：分支名一行，下面每个合并人一张表。results=[(分支, 合并, 强推)]。"""
+def build_card(title: str, intro: str, results: list, note: str = "", people: dict = None) -> dict:
+    """飞书交互卡片（schema 2.0）：分支名一行，下面每个合并人一张表。results=[(分支, 合并, 强推)]。
+
+    people 是自检名单（小写 git 作者 → 真名、open_id）：合并人有 open_id 就 @ 他，表里的作者也换成真名。"""
     elements = []
     if intro:
         elements.append({"tag": "markdown", "content": intro})
@@ -314,21 +330,23 @@ def build_card(title: str, intro: str, results: list, note: str = "") -> dict:
             continue
         elements.append({"tag": "markdown", "content": f"**【{branch}】**"})
         for item in forced:
-            lost = "；".join(_commit_line(line) for line in item["lost"][:5]) or "没列出被冲掉的提交"
+            lost = "；".join(_commit_line(line, people) for line in item["lost"][:5]) or "没列出被冲掉的提交"
             elements.append({"tag": "markdown",
                              "content": f"**疑似被强推**（{item['when']}）`{item['old']}` → `{item['new']}`\n冲掉：{lost}"})
         for author, items in group_by_author(merges):
             if (branch, author) not in own:
                 overflow.append((branch, items))
                 continue
-            elements.append({"tag": "markdown", "content": _person_title(author, items)})
-            elements.append(_table(_table_rows(items)))
+            total = sum(item.get("count") or 0 for item in items)
+            elements.append({"tag": "markdown",
+                             "content": f"{_person_mention(author, people)} 合并 {len(items)} 次，丢了 {total} 个文件的修改"})
+            elements.append(_table(_table_rows(items, people=people)))
     if overflow:
-        names = "、".join(dict.fromkeys(items[0].get("author") or "" for _branch, items in overflow))
+        names = " ".join(dict.fromkeys(_person_mention(items[0].get("author") or "", people) for _branch, items in overflow))
         elements.append({"tag": "markdown", "content": f"**其他人**（{names}）"})
         rows = []
         for branch, items in overflow:
-            for row in _table_rows(items, with_author=True):
+            for row in _table_rows(items, with_author=True, people=people):
                 row["merge"] = f"{branch} · {row['merge']}"
                 rows.append(row)
         elements.append(_table(rows))

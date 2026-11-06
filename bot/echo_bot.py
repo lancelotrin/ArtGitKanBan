@@ -2836,6 +2836,16 @@ def send_groups(chat_ids: list, text: str, key: str, title: str) -> int:
     return sent
 
 
+def bomb_people() -> dict:
+    """炸线卡片用：自检名单里的 git 作者 → 真名、open_id（有 open_id 就在卡片里 @ 他）。"""
+    people = {}
+    for sub in load_review_subs():
+        open_id = str(sub.get("open_id") or "")
+        people[str(sub["git_author"]).lower()] = {
+            "name": str(sub.get("name") or "").strip(), "open_id": open_id if open_id.startswith("ou_") else ""}
+    return people
+
+
 def send_card(target_flag: str, target: str, card: dict, key: str, label: str) -> bool:
     try:
         run_cli(["im", "+messages-send", "--as", "bot", target_flag, target, "--msg-type", "interactive",
@@ -3088,7 +3098,7 @@ def answer_bomb(text: str) -> str:
         return f"{empty}{tail}".rstrip()
     intro = f"{label} {names} 查了 {scanned} 个合并："
     text = f"{intro}\n\n" + "\n\n".join(reports) + f"\n\n{bomb.BOMB_NOTE}{tail}"
-    card = bomb.build_card(BOMB_TITLE, intro, alerted, bomb.BOMB_NOTE + tail.replace("\n", " "))
+    card = bomb.build_card(BOMB_TITLE, intro, alerted, bomb.BOMB_NOTE + tail.replace("\n", " "), bomb_people())
     return CardReply.make(text, card)
 
 
@@ -3205,7 +3215,7 @@ def run_bomb_once(days: int) -> None:
         if reports:
             body = "\n\n".join(reports) + f"\n\n{bomb.BOMB_NOTE}"
             key = hashlib.sha1("|".join(fresh_keys).encode("utf-8")).hexdigest()[:12]
-            sent = send_bomb_alert(bomb.build_card(BOMB_TITLE, "", fresh, bomb.BOMB_NOTE), key)
+            sent = send_bomb_alert(bomb.build_card(BOMB_TITLE, "", fresh, bomb.BOMB_NOTE, bomb_people()), key)
             recent = [{"at": now_text, "sent": sent, "text": redact(body)[:4000]}] + list(state.get("recent") or [])
             state["recent"] = recent[:BOMB_RECENT_KEEP]
         if sent:
