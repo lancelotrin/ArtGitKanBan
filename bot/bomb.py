@@ -137,9 +137,39 @@ def blob(git, rev: str, path: str) -> str:
 
 
 def lost_commits(git, keep: str, lost: str, path: str) -> list:
-    ok, out = git(["log", "--no-merges", f"-{LOST_COMMITS_SHOWN}", "--format=%h|%an|%ad|%s", "--date=format:%m-%d %H:%M",
-                   f"{keep}..{lost}", "--", path])
-    return [line for line in out.splitlines() if line.strip()] if ok else []
+    """丢掉那侧改过这个文件的提交。--full-history 防止 git 简化历史时跳过；
+    普通提交找不到（改动是解冲突时在合并里做的）就把合并提交也列上。"""
+    base = ["log", "--full-history", f"-{LOST_COMMITS_SHOWN}", "--format=%h|%an|%ad|%s", "--date=format:%m-%d %H:%M"]
+    for extra in (["--no-merges"], []):
+        ok, out = git(base + extra + [f"{keep}..{lost}", "--", path])
+        rows = [line for line in out.splitlines() if line.strip()] if ok else []
+        if rows:
+            return rows
+    return []
+
+
+def fill_revs(git, item: dict) -> None:
+    """看板里的旧记录只存了短合并号：补出完整合并号，并按文件找出丢掉那侧（和合并结果内容不同的那个父提交）。"""
+    if not item.get("merge_rev"):
+        ok, out = git(["rev-parse", "-q", "--verify", f"{item.get('merge')}^{{commit}}"])
+        item["merge_rev"] = out.strip() if ok else ""
+    merge = item.get("merge_rev")
+    if not merge:
+        return
+    ok, out = git(["log", "-1", "--format=%P", merge])
+    parents = out.split() if ok else []
+    if len(parents) != 2:
+        return
+    for detail in item.get("files") or []:
+        if detail.get("lost_rev") and detail.get("keep_rev"):
+            continue
+        now = blob(git, merge, detail["path"])
+        lost = [parent for parent in parents if blob(git, parent, detail["path"]) != now]
+        if len(lost) == 1:
+            detail["lost_rev"] = lost[0]
+            detail["keep_rev"] = parents[1] if lost[0] == parents[0] else parents[0]
+            if not detail.get("commits"):
+                detail["commits"] = lost_commits(git, detail["keep_rev"], detail["lost_rev"], detail["path"])
 
 
 def file_state(git, tip: str, merge: str, lost: str, path: str) -> str:
@@ -169,7 +199,11 @@ JUDGE_PROMPT = (
     "合并结果和合并人这一侧完全一样，合进来那一侧对这些文件的改动没了。\n"
     "对每个文件，看「丢掉那侧的改动」和丢掉的提交说明，判断合并人是解冲突时误丢（多半是选了「用我的」），"
     "还是有意不要这些修改（例如对方改错了、已被别的改动替代、是自动生成或缓存文件、两边只是格式差异）。"
-    "文件现在的状态也给你了：「已补回」说明后来又加回来了。二进制文件或信息不够时就说看不出，不要猜。\n"
+    "文件现在的状态也给你了：「已补回」说明后来又加回来了。\n"
+    "材料里给了合并提交号、合并人这一侧和丢掉那侧的提交号，以及预先取好的 diff。diff 不够、被截断或丢掉的提交说明不清楚时，"
+    "请在当前工程目录里自己用只读的 git 命令按提交号查，例如 git show <提交号> --stat、git show <提交号> -- <文件>、"
+    "git log <合并人这侧>..<丢掉那侧> -- <文件>、git diff <合并提交> <丢掉那侧> -- <文件>。"
+    "查到改动内容后要给出明确结论；只有二进制文件、或查过仍看不出意图时才说看不出，不要因为材料里没贴 diff 就说看不出。\n"
     "只输出一个 JSON 数组，不要别的文字。每项：{\"path\": 原样的文件路径, "
     "\"verdict\": \"像是误丢\" | \"像是故意保留\" | \"看不出\", \"reason\": 不超过 30 个字的中文理由}。")
 
@@ -178,7 +212,8 @@ def judge_material(git, item: dict, branch: str) -> str:
     """给 Codex 判断用的材料：合并说明 + 每个文件「合并结果 → 丢掉那侧」的 diff（+ 是被丢掉的内容）。
 
     不用 merge-base：交叉合并时 merge-base 到丢掉那侧常常是空的，看不出丢了什么。"""
-    parts = [f"分支：{branch}", f"合并：{item.get('merge')} {item.get('date')} 合并人 {item.get('author')}",
+    fill_revs(git, item)
+    parts = [f"分支：{branch}", f"合并提交：{item.get('merge_rev') or item.get('merge')} {item.get('date')} 合并人 {item.get('author')}",
              f"合并说明：{item.get('subject') or ''}"]
     used = 0
     for detail in item.get("files") or []:
@@ -192,6 +227,7 @@ def judge_material(git, item: dict, branch: str) -> str:
             used += len(diff)
         commits = "；".join(_commit_line(line) for line in detail.get("commits") or []) or "没找到对应提交"
         parts.append(f"\n### 文件：{detail['path']}\n现在的状态：{detail.get('state')}；丢的分支：{detail.get('lost_branch')}"
+                     f"\n合并人这侧：{detail.get('keep_rev') or '未知'}；丢掉那侧：{lost or '未知'}"
                      f"\n丢掉的提交：{commits}\n合并结果 → 丢掉那侧的 diff（+ 是被丢掉的内容，- 是合并后才有、丢掉那侧没有的）：\n{diff.strip() or '（没取到 diff，可能是二进制文件或材料超长）'}")
     return "\n".join(parts)
 

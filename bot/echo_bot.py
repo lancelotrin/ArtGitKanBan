@@ -2868,7 +2868,8 @@ def send_groups(chat_ids: list, text: str, key: str, title: str) -> int:
 
 
 BOMB_JUDGE_MAX = 6          # 一次最多让 Codex 判断几次合并，剩下的下回再判
-BOMB_JUDGE_TIMEOUT = 180    # 单次判断超时（秒）
+BOMB_JUDGE_TIMEOUT = 300    # 单次判断超时（秒）；Codex 可能要自己跑几条 git 命令
+BOMB_JUDGED_KEY = "judged_v2"  # v1 判断时没给到 diff 和提交号，结论多是「看不出」，作废重判
 BOMB_JUDGED_KEEP = 300
 
 
@@ -2878,7 +2879,8 @@ def judge_one_merge(branch: str, item: dict) -> dict:
     name = codex_cli.label()
     try:
         answer, usage = codex_cli.ask([{"role": "system", "content": bomb.JUDGE_PROMPT},
-                                       {"role": "user", "content": redact(material)}], timeout=BOMB_JUDGE_TIMEOUT)
+                                       {"role": "user", "content": redact(material)}], timeout=BOMB_JUDGE_TIMEOUT,
+                                      project_dir=get_git_root(), branches=list(GIT_BRANCHES))
     except (codex_cli.CodexError, codex_cli.CodexTimeout, OSError) as error:
         model_stats.note(name, False, redact(f"{type(error).__name__}: {error}"))
         log(f"[bomb] judge {item.get('merge')} failed {type(error).__name__}: {str(error)[:160]}")
@@ -2895,7 +2897,7 @@ def judge_bomb_results(results: list) -> int:
     没装 Codex 时什么都不做。返回这次新判断的合并数。"""
     if not USE_CODEX:
         return 0
-    cache = load_bomb_state().get("judged") or {}
+    cache = load_bomb_state().get(BOMB_JUDGED_KEY) or {}
     todo = []
     for branch, merges, _forced in results:
         for item in merges:
@@ -2911,10 +2913,16 @@ def judge_bomb_results(results: list) -> int:
     if fresh:
         with _bomb_lock:
             state = load_bomb_state()
-            merged = dict(state.get("judged") or {})
+            merged = dict(state.get(BOMB_JUDGED_KEY) or {})
             merged.update(fresh)
-            state["judged"] = dict(list(merged.items())[-BOMB_JUDGED_KEEP:])
+            state[BOMB_JUDGED_KEY] = dict(list(merged.items())[-BOMB_JUDGED_KEEP:])
+            state.pop("judged", None)
             save_bomb_state(state)
+        for merge, verdicts in fresh.items():
+            try:
+                bomb_board.set_judges(merge, verdicts)
+            except Exception as error:
+                log(f"[bomb] judge save failed {type(error).__name__}: {error}")
         cache = dict(cache, **fresh)
     for _branch, merges, _forced in results:
         for item in merges:

@@ -74,11 +74,13 @@ def _upsert_merge(records: dict, branch: str, item: dict, told: set, stamp: str)
         "date": str(item.get("date") or ""),
         "at": str(item.get("at") or record.get("at") or stamp),
         "subject": str(item.get("subject") or ""),
+        "merge_rev": str(item.get("merge_rev") or record.get("merge_rev") or ""),
         "count": int(item.get("count") or 0),
         "paths": [str(path) for path in item.get("paths") or []] or list(record.get("paths") or []),
         "files": [{"path": str(detail.get("path") or ""), "state": str(detail.get("state") or ""),
                    "commits": [str(line) for line in detail.get("commits") or []],
                    "lost_branch": str(detail.get("lost_branch") or ""),
+                   "keep_rev": str(detail.get("keep_rev") or ""), "lost_rev": str(detail.get("lost_rev") or ""),
                    "judge": str(detail.get("judge") or old_judge.get(str(detail.get("path") or "")) or "")}
                   for detail in item.get("files") or []],
         "checked_at": stamp,
@@ -171,6 +173,19 @@ def mark_alerted(keys) -> None:
             save(data)
 
 
+def set_judges(merge: str, verdicts: dict) -> None:
+    """Codex 判断写回看板记录（再提醒直接用记录，不重新判断）。"""
+    with _lock:
+        data = load()
+        record = data["records"].get("merge:" + str(merge or ""))
+        if not record:
+            return
+        for detail in record.get("files") or []:
+            if detail.get("path") in verdicts:
+                detail["judge"] = verdicts[detail["path"]]
+        save(data)
+
+
 def open_results() -> list:
     """没解决的记录，整理成扫描结果的样子 [(分支, 合并列表, 强推列表)]，给提醒直接用。按时间先后排。"""
     by_branch = {}
@@ -184,7 +199,8 @@ def open_results() -> list:
                            "lost": list(record.get("lost") or [])})
         else:
             files = [dict(item) for item in record.get("files") or []]
-            merges.append({"merge": record.get("merge", ""), "author": record.get("author", ""),
+            merges.append({"merge": record.get("merge", ""), "merge_rev": record.get("merge_rev", ""),
+                           "author": record.get("author", ""),
                            "date": record.get("date", ""), "at": record.get("at", ""), "subject": record.get("subject", ""),
                            "count": int(record.get("count") or len(files)),
                            "paths": list(record.get("paths") or []), "files": files})
