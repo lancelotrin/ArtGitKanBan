@@ -2836,6 +2836,64 @@ def send_groups(chat_ids: list, text: str, key: str, title: str) -> int:
     return sent
 
 
+BOMB_JUDGE_MAX = 6          # 一次最多让 Codex 判断几次合并，剩下的下回再判
+BOMB_JUDGE_TIMEOUT = 180    # 单次判断超时（秒）
+BOMB_JUDGED_KEEP = 300
+
+
+def judge_one_merge(branch: str, item: dict) -> dict:
+    """让 Codex 看丢掉那侧的 diff，返回 {路径: "像是误丢：理由"}。失败返回空。"""
+    material = bomb.judge_material(bomb_git, item, branch)
+    name = codex_cli.label()
+    try:
+        answer, usage = codex_cli.ask([{"role": "system", "content": bomb.JUDGE_PROMPT},
+                                       {"role": "user", "content": redact(material)}], timeout=BOMB_JUDGE_TIMEOUT)
+    except (codex_cli.CodexError, codex_cli.CodexTimeout, OSError) as error:
+        model_stats.note(name, False, redact(f"{type(error).__name__}: {error}"))
+        log(f"[bomb] judge {item.get('merge')} failed {type(error).__name__}: {str(error)[:160]}")
+        return {}
+    model_stats.note(name, True, prompt_tokens=int(usage.get("input_tokens") or 0),
+                     completion_tokens=int(usage.get("output_tokens") or 0))
+    verdicts = bomb.parse_judgement(answer, [detail["path"] for detail in item.get("files") or []])
+    log(f"[bomb] judge {item.get('merge')} files={len(verdicts)}")
+    return verdicts
+
+
+def judge_bomb_results(results: list) -> int:
+    """给结果里每个文件填 detail["judge"]（Codex 判断）。按合并号缓存在 bomb.json 的 judged 里，判过的不再判。
+    没装 Codex 时什么都不做。返回这次新判断的合并数。"""
+    if not USE_CODEX:
+        return 0
+    cache = load_bomb_state().get("judged") or {}
+    todo = []
+    for branch, merges, _forced in results:
+        for item in merges:
+            cached = cache.get(item["merge"])
+            if cached is None and len(todo) < BOMB_JUDGE_MAX and item.get("files"):
+                todo.append((branch, item))
+    fresh = {}
+    if todo:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            for (branch, item), verdicts in zip(todo, pool.map(lambda pair: judge_one_merge(*pair), todo)):
+                if verdicts:
+                    fresh[item["merge"]] = verdicts
+    if fresh:
+        with _bomb_lock:
+            state = load_bomb_state()
+            merged = dict(state.get("judged") or {})
+            merged.update(fresh)
+            state["judged"] = dict(list(merged.items())[-BOMB_JUDGED_KEEP:])
+            save_bomb_state(state)
+        cache = dict(cache, **fresh)
+    for _branch, merges, _forced in results:
+        for item in merges:
+            verdicts = cache.get(item["merge"]) or {}
+            for detail in item.get("files") or []:
+                if detail["path"] in verdicts:
+                    detail["judge"] = verdicts[detail["path"]]
+    return len(fresh)
+
+
 def bomb_people() -> dict:
     """炸线卡片用：自检名单里的 git 作者 → 真名、open_id（有 open_id 就在卡片里 @ 他）。"""
     people = {}
@@ -3027,7 +3085,28 @@ BOMB_ALERT_CHAT_IDS = (
 )
 
 
+BOMB_DIFF_HASH = re.compile(r"[0-9a-f]{7,40}")
+
+
+def bomb_diff_allowed(args: list) -> bool:
+    """炸线判断只放行一种 diff：diff --no-color -U2 <哈希> <哈希> -- <仓库内路径>。不写文件、不读仓库外。"""
+    if len(args) != 7 or args[:3] != ["diff", "--no-color", "-U2"] or args[5] != "--":
+        return False
+    path = args[6]
+    return bool(BOMB_DIFF_HASH.fullmatch(args[3]) and BOMB_DIFF_HASH.fullmatch(args[4]) and path and not path.startswith(("-", "/", ":"))
+                and ".." not in path.split("/"))
+
+
 def bomb_git(args: list) -> tuple:
+    if args and args[0] == "diff":
+        if not bomb_diff_allowed(args):
+            return False, "仅支持只读 git 查询。"
+        try:
+            result = subprocess.run(["git", "-C", get_git_root()] + args, capture_output=True, text=True,
+                                    encoding="utf-8", errors="replace", timeout=GIT_TIMEOUT, creationflags=NO_WINDOW)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            return False, str(error)
+        return result.returncode == 0, result.stdout if result.returncode == 0 else (result.stderr or "")[:500]
     return run_git_readonly(get_git_root(), args)
 
 
@@ -3085,6 +3164,7 @@ def answer_bomb(text: str) -> str:
     ignore_paths = bomb_ignore_paths()
     alerted, dropped = alert_bomb_results(results, ignore_paths)
     alerted = [(branch, merges, forced) for branch, merges, forced in alerted if merges or forced]
+    judge_bomb_results(alerted)
     reports = [bomb.format_report(branch, merges, forced) for branch, merges, forced in alerted]
     names = "、".join(branches)
     tail = f"\n（{note}）" if note else ""
@@ -3208,6 +3288,9 @@ def run_bomb_once(days: int) -> None:
             reports.append(bomb.format_report(branch, new_merges, new_forced))
             fresh.append((branch, new_merges, new_forced))
         fresh_keys += [item["merge"] for item in new_merges] + [f"force:{item['new']}" for item in new_forced]
+    if fresh:
+        judge_bomb_results(fresh)
+        reports = [bomb.format_report(branch, merges, forced) for branch, merges, forced in fresh]
     sent = True
     now_text = datetime.datetime.now(BEIJING_TZ).isoformat(timespec="seconds")
     with _bomb_lock:

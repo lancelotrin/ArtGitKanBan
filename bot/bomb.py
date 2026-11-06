@@ -2,6 +2,7 @@
 
 git 参数是 run_git(args) -> (ok, stdout)，由调用方套上只读白名单。
 """
+import json
 import re
 
 MERGE_SCAN_LIMIT = 80
@@ -147,6 +148,67 @@ MERGE_SUBJECT = re.compile(
     r"Merge (?:remote-tracking )?branch '([^']+)'(\s+of\s+\S+)?(?:\s+into\s+'?([^'\s]+)'?)?", re.IGNORECASE)
 
 
+JUDGE_DIFF_PER_FILE = 2000
+JUDGE_DIFF_TOTAL = 16000
+JUDGE_VERDICTS = ("像是误丢", "像是故意保留", "看不出")
+JUDGE_PROMPT = (
+    "你在帮美术/程序团队排查 git 合并时丢修改（炸线）。下面是一次合并里疑似被整份丢掉的修改："
+    "合并结果和合并人这一侧完全一样，合进来那一侧对这些文件的改动没了。\n"
+    "对每个文件，看「丢掉那侧的改动」和丢掉的提交说明，判断合并人是解冲突时误丢（多半是选了「用我的」），"
+    "还是有意不要这些修改（例如对方改错了、已被别的改动替代、是自动生成或缓存文件、两边只是格式差异）。"
+    "文件现在的状态也给你了：「已补回」说明后来又加回来了。二进制文件或信息不够时就说看不出，不要猜。\n"
+    "只输出一个 JSON 数组，不要别的文字。每项：{\"path\": 原样的文件路径, "
+    "\"verdict\": \"像是误丢\" | \"像是故意保留\" | \"看不出\", \"reason\": 不超过 30 个字的中文理由}。")
+
+
+def judge_material(git, item: dict, branch: str) -> str:
+    """给 Codex 判断用的材料：合并说明 + 每个文件「合并结果 → 丢掉那侧」的 diff（+ 是被丢掉的内容）。
+
+    不用 merge-base：交叉合并时 merge-base 到丢掉那侧常常是空的，看不出丢了什么。"""
+    parts = [f"分支：{branch}", f"合并：{item.get('merge')} {item.get('date')} 合并人 {item.get('author')}",
+             f"合并说明：{item.get('subject') or ''}"]
+    used = 0
+    for detail in item.get("files") or []:
+        merged, lost = item.get("merge_rev"), detail.get("lost_rev")
+        diff = ""
+        if merged and lost and used < JUDGE_DIFF_TOTAL:
+            ok, out = git(["diff", "--no-color", "-U2", merged, lost, "--", detail["path"]])
+            diff = out if ok else ""
+            if len(diff) > JUDGE_DIFF_PER_FILE:
+                diff = diff[:JUDGE_DIFF_PER_FILE] + "\n…（太长截断）"
+            used += len(diff)
+        commits = "；".join(_commit_line(line) for line in detail.get("commits") or []) or "没找到对应提交"
+        parts.append(f"\n### 文件：{detail['path']}\n现在的状态：{detail.get('state')}；丢的分支：{detail.get('lost_branch')}"
+                     f"\n丢掉的提交：{commits}\n合并结果 → 丢掉那侧的 diff（+ 是被丢掉的内容，- 是合并后才有、丢掉那侧没有的）：\n{diff.strip() or '（没取到 diff，可能是二进制文件或材料超长）'}")
+    return "\n".join(parts)
+
+
+def parse_judgement(answer: str, paths: list) -> dict:
+    """Codex 回的 JSON 数组 → {路径: "像是误丢：理由"}。对不上的路径按文件名匹配，认不出的结论记成看不出。"""
+    text = answer or ""
+    start, end = text.find("["), text.rfind("]")
+    try:
+        rows = json.loads(text[start:end + 1]) if start >= 0 and end > start else []
+    except ValueError:
+        rows = []
+    by_name = {}
+    for path in paths:
+        by_name.setdefault(path.rsplit("/", 1)[-1], path)
+    found = {}
+    for row in rows if isinstance(rows, list) else []:
+        if not isinstance(row, dict):
+            continue
+        raw = str(row.get("path") or "").strip()
+        path = raw if raw in paths else by_name.get(raw.rsplit("/", 1)[-1])
+        if not path:
+            continue
+        verdict = str(row.get("verdict") or "").strip()
+        verdict = verdict if verdict in JUDGE_VERDICTS else "看不出"
+        reason = re.sub(r"\s+", " ", str(row.get("reason") or "")).strip()[:60]
+        found[path] = f"{verdict}：{reason}" if reason else verdict
+    return found
+
+
 def merge_sides(subject: str, branch: str) -> tuple:
     """从合并说明猜两侧分支名，返回 (第一父=合并人本地那侧, 第二父=合进来的那侧)。"""
     match = MERGE_SUBJECT.search(subject or "")
@@ -199,8 +261,9 @@ def scan_merges(git, ref: str, since: str) -> tuple:
                 "commits": lost_commits(git, item["keep"], item["lost"], item["path"]),
                 "state": file_state(git, ref, merge, item["lost"], item["path"]),
                 "lost_branch": sides[item["side"] - 1],
+                "keep_rev": item["keep"], "lost_rev": item["lost"],
             })
-        found.append({"merge": merge[:11], "author": author, "date": date, "at": at, "subject": subject,
+        found.append({"merge": merge[:11], "merge_rev": merge, "author": author, "date": date, "at": at, "subject": subject,
                       "count": len(shown), "paths": shown, "files": details})
     return found, len(rows)
 
@@ -278,6 +341,8 @@ def format_report(branch: str, merges: list, forced: list) -> str:
             for detail in item["files"]:
                 branch_note = f" · 丢的分支：{detail['lost_branch']}" if detail.get("lost_branch") else ""
                 lines.append(f"· `{_short_path(detail['path'])}`（{detail['state']}{branch_note}）丢的是：{_lost_whose(detail)}")
+                if detail.get("judge"):
+                    lines.append(f"  Codex 判断：{detail['judge']}")
             if item["count"] > len(item["files"]):
                 lines.append(f"· 另外还有 {item['count'] - len(item['files'])} 个文件")
         blocks.append("\n".join(lines))
@@ -285,7 +350,8 @@ def format_report(branch: str, merges: list, forced: list) -> str:
 
 
 CARD_TABLES_MAX = 5  # 飞书卡片表格组件数量有限，超出的人并进最后一张表
-CARD_COLUMNS = (("merge", "合并"), ("file", "文件"), ("state", "状态"), ("branch", "丢的分支"), ("whose", "丢的提交"))
+CARD_COLUMNS = (("merge", "合并"), ("file", "文件"), ("state", "状态"), ("branch", "丢的分支"), ("whose", "丢的提交"),
+                ("judge", "Codex 判断"))
 
 
 def _table_rows(items: list, with_author: bool = False, people: dict = None) -> list:
@@ -297,10 +363,10 @@ def _table_rows(items: list, with_author: bool = False, people: dict = None) -> 
         for detail in item["files"]:
             rows.append({"merge": head, "file": _short_path(detail["path"]), "state": detail["state"],
                          "branch": detail.get("lost_branch") or "对面那侧",
-                         "whose": _lost_whose(detail, people).replace("`", "")})
+                         "whose": _lost_whose(detail, people).replace("`", ""), "judge": detail.get("judge") or "没判断"})
         if item["count"] > len(item["files"]):
             rows.append({"merge": head, "file": f"另外还有 {item['count'] - len(item['files'])} 个文件",
-                         "state": "", "branch": "", "whose": "完整列表看炸线看板"})
+                         "state": "", "branch": "", "whose": "完整列表看炸线看板", "judge": ""})
     return rows
 
 

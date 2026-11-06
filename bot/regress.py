@@ -147,6 +147,20 @@ def bomb_fake_ok() -> bool:
                                 "", people)
     texts = [element.get("content", "") for element in named["body"]["elements"]]
     card_ok = card_ok and "<at id=ou_abc></at> 合并 1 次" in texts[1] and texts[3].startswith("**李四**")
+    verdicts = bot.bomb.parse_judgement(
+        '好的\n[{"path": "a.prefab", "verdict": "像是误丢", "reason": "对方新加的节点被冲掉"},'
+        ' {"path": "x/b.cs", "verdict": "瞎写", "reason": ""}]', ["a.prefab", "Foo/b.cs"])
+    judged = dict(found[0], files=[dict(found[0]["files"][0], judge=verdicts.get("a.prefab"))])
+    judge_card = bot.bomb.build_card("t", "", [("main", [judged], [])])
+    judge_cells = [row["judge"] for element in judge_card["body"]["elements"] for row in element.get("rows", [])]
+    card_ok = (card_ok and verdicts == {"a.prefab": "像是误丢：对方新加的节点被冲掉", "Foo/b.cs": "看不出"}
+               and judge_cells == ["像是误丢：对方新加的节点被冲掉"]
+               and "Codex 判断：像是误丢" in bot.bomb.format_report("main", [judged], [])
+               and bot.bomb.parse_judgement("没法判断", ["a.prefab"]) == {}
+               and bot.bomb_diff_allowed(["diff", "--no-color", "-U2", "abc1234", "def5678", "--", "Client/a.cs"])
+               and not bot.bomb_diff_allowed(["diff", "--no-color", "-U2", "abc1234", "--output=x", "--", "a"])
+               and not bot.bomb_diff_allowed(["diff", "--no-color", "-U2", "abc1234", "def5678", "--", "--no-index"])
+               and not bot.bomb_diff_allowed(["diff", "--no-color", "-U2", "abc1234", "def5678", "--", "../x"]))
     return (card_ok and count == 1 and len(found) == 1 and [f["path"] for f in found[0]["files"]] == ["a.prefab"]
             and found[0]["files"][0]["state"] == "还丢着" and "wangqingyang" in report and "https" not in report
             and found[0]["at"] == "2026-11-03T12:18:00+08:00"
