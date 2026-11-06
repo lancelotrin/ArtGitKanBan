@@ -178,6 +178,33 @@ def bomb_fake_ok() -> bool:
             and [f["path"] for f in kept[0]["files"]] == ["Foo/a.cs"] and dropped == 4)
 
 
+def bomb_judge_cache_ok() -> bool:
+    """Codex 判断过的存下来：再提醒、重扫同一合并、缓存被清掉都不再调 Codex。"""
+    root = tempfile.mkdtemp()
+    saved = (bot.bomb_board.HISTORY_PATH, bot.BOMB_PATH, bot.USE_CODEX, bot.judge_one_merge)
+    calls = []
+    try:
+        bot.bomb_board.HISTORY_PATH = os.path.join(root, "h.json")
+        bot.BOMB_PATH = os.path.join(root, "s.json")
+        bot.save_bomb_state({})
+        bot.USE_CODEX = True
+        bot.judge_one_merge = lambda branch, item: calls.append(item["merge"]) or {"a/x.prefab": "像是误丢：节点被冲掉"}
+        item = lambda: {"merge": "abc1234", "author": "ge", "at": "2026-11-06T10:00", "count": 1,
+                        "files": [{"path": "a/x.prefab", "state": "还丢着", "commits": []}]}
+        bot.bomb_board.record_scan([("main", [item()], [])], [])
+        bot.judge_bomb_results([("main", [item()], [])])
+        pending = bot.bomb_board.open_results()
+        bot.judge_bomb_results(pending)
+        bot.save_bomb_state({})  # 缓存丢了，看板记录里还有
+        again = bot.bomb_board.open_results()
+        bot.judge_bomb_results(again)
+        return (calls == ["abc1234"] and pending[0][1][0]["files"][0]["judge"] == "像是误丢：节点被冲掉"
+                and again[0][1][0]["files"][0]["judge"] == "像是误丢：节点被冲掉")
+    finally:
+        bot.bomb_board.HISTORY_PATH, bot.BOMB_PATH, bot.USE_CODEX, bot.judge_one_merge = saved
+        shutil.rmtree(root, ignore_errors=True)
+
+
 def run_reactions() -> int:
     failed = 0
     for text, expect in REACTION_CASES:
@@ -558,6 +585,7 @@ def run_memory() -> int:
         and not bot.is_chat_opinion("贴图压缩用ASTC还是ETC2")
         and not bot.is_chat_opinion("项目里谁负责路飞模型")
         and bomb_fake_ok()
+        and bomb_judge_cache_ok()
         and bot.bomb.is_bomb_request("今天有没有炸线")
         and bot.bomb.is_bomb_request("谁合并把我的修改丢了")
         and not bot.bomb.is_bomb_request("zhuhui今天的提交")

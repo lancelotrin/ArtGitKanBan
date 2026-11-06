@@ -2893,7 +2893,8 @@ def judge_one_merge(branch: str, item: dict) -> dict:
 
 
 def judge_bomb_results(results: list) -> int:
-    """给结果里每个文件填 detail["judge"]（Codex 判断）。按合并号缓存在 bomb.json 的 judged 里，判过的不再判。
+    """给结果里每个文件填 detail["judge"]（Codex 判断）。判过的存在 bomb.json 的 judged_v2 和看板记录里，
+    下次直接用，不再调 Codex。
     没装 Codex 时什么都不做。返回这次新判断的合并数。"""
     if not USE_CODEX:
         return 0
@@ -2902,7 +2903,10 @@ def judge_bomb_results(results: list) -> int:
     for branch, merges, _forced in results:
         for item in merges:
             cached = cache.get(item["merge"])
-            if cached is None and len(todo) < BOMB_JUDGE_MAX and item.get("files"):
+            files = item.get("files") or []
+            if cached is None and files and all(detail.get("judge") for detail in files):
+                continue  # 看板记录里已经有判断（缓存被清掉也不重判）
+            if cached is None and len(todo) < BOMB_JUDGE_MAX and files:
                 todo.append((branch, item))
     fresh = {}
     if todo:
