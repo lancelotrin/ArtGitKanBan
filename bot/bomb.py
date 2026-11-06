@@ -332,10 +332,15 @@ def _short_path(path: str) -> str:
     return "/".join(str(path or "").split("/")[-3:])
 
 
+def by_time(merges: list) -> list:
+    """按合并时间从早到晚。git log 是新的在前，看板记录是旧的在前，统一一下。"""
+    return sorted(merges or [], key=lambda item: str(item.get("at") or ""))
+
+
 def group_by_author(merges: list) -> list:
-    """按合并人归组，保持首次出现顺序。返回 [(合并人, [合并...])]。"""
+    """按合并人归组：先按时间从早到晚排，人按各自最早那次合并的先后。返回 [(合并人, [合并...])]。"""
     groups = {}
-    for item in merges:
+    for item in by_time(merges):
         groups.setdefault(item.get("author") or "未知", []).append(item)
     return list(groups.items())
 
@@ -407,6 +412,10 @@ def build_card(title: str, intro: str, results: list, note: str = "", people: di
     elements = []
     if intro:
         elements.append({"tag": "markdown", "content": intro})
+    def first_at(entry) -> str:
+        times = [str(item.get("at") or "") for item in entry[1]] or ["~"]  # 只有强推的分支排后面
+        return min(times)
+    results = sorted(results, key=first_at)
     groups = [(branch, author) for branch, merges, _forced in results for author, _items in group_by_author(merges)]
     own = set(groups if len(groups) <= CARD_TABLES_MAX else groups[:CARD_TABLES_MAX - 1])
     overflow = []

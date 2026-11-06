@@ -166,8 +166,8 @@ def bomb_fake_ok() -> bool:
                and not bot.bomb_board.is_open({"status": "已补回"})
                and bot.bomb_remind_due({}, datetime.datetime(2026, 11, 6, 10, tzinfo=bot.BEIJING_TZ))
                and not bot.bomb_remind_due({}, datetime.datetime(2026, 11, 6, 23, tzinfo=bot.BEIJING_TZ))
-               and not bot.bomb_remind_due({"last_remind_at": "2026-11-06T09:00:00+08:00"},
-                                           datetime.datetime(2026, 11, 6, 10, tzinfo=bot.BEIJING_TZ)))
+               and bot.bomb_remind_due({"last_remind_at": "2026-11-06T09:50:00+08:00"},
+                                       datetime.datetime(2026, 11, 6, 10, tzinfo=bot.BEIJING_TZ)))
     return (card_ok and count == 1 and len(found) == 1 and [f["path"] for f in found[0]["files"]] == ["a.prefab"]
             and found[0]["files"][0]["state"] == "还丢着" and "wangqingyang" in report and "https" not in report
             and found[0]["at"] == "2026-11-03T12:18:00+08:00"

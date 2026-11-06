@@ -3308,22 +3308,12 @@ def control_bomb(action: str, minutes=None, days=None, groups_text: str = "", ig
     return dict(bomb_view(), ok=True, message=message)
 
 
-BOMB_REMIND_HOURS = 4          # 没解决的旧炸线多久再提醒一次（bomb.json 里 remind_hours 可改）
-BOMB_REMIND_WORK_HOURS = (9, 21)  # 旧的只在白天再提醒；新发现的随时报
+BOMB_REMIND_WORK_HOURS = (9, 21)  # 没解决的旧炸线只在白天再提醒（每次检查都报）；新发现的随时报
 
 
-def bomb_remind_due(state: dict, now: datetime.datetime) -> bool:
-    try:
-        hours = max(float(state.get("remind_hours") or BOMB_REMIND_HOURS), 0.5)
-    except (TypeError, ValueError):
-        hours = BOMB_REMIND_HOURS
-    if not BOMB_REMIND_WORK_HOURS[0] <= now.hour < BOMB_REMIND_WORK_HOURS[1]:
-        return False
-    try:
-        last = datetime.datetime.fromisoformat(str(state.get("last_remind_at") or ""))
-    except ValueError:
-        return True
-    return now - last >= datetime.timedelta(hours=hours)
+def bomb_remind_due(_state: dict, now: datetime.datetime) -> bool:
+    """没解决的就一直报：白天每次检查都报，不看上次什么时候报过。"""
+    return BOMB_REMIND_WORK_HOURS[0] <= now.hour < BOMB_REMIND_WORK_HOURS[1]
 
 
 def bomb_board_url() -> str:
@@ -3338,7 +3328,7 @@ def bomb_keys(results: list) -> list:
 def run_bomb_once(days: int) -> None:
     """增量查新合并 → 新的先让 Codex 判断并记进看板 → 看板里所有没标记解决的拿来提醒。
 
-    新发现的马上报；之前报过、还没解决的按 remind_hours 白天再报，直接用看板记录，不重新查 git。"""
+    新发现的马上报；之前报过、还没解决的白天每次检查都再报，直接用看板记录，不重新查 git。"""
     state = load_bomb_state()
     known = {str(item) for item in state.get("told") or []}
     ignore_paths = bomb_ignore_paths(state)
