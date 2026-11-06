@@ -21,19 +21,34 @@ function Sites() {
       toast((e as Error).message || "没成功", true);
     }
   };
+  const setOpen = async (port: string, on: boolean) => {
+    try {
+      await adminPost("sites", { action: "open", port, on });
+      await client.invalidateQueries({ queryKey: ["sites"] });
+      toast(on ? "已开放：所有人都能看到" : "已关闭：普通用户看不到了，管理员照常能用");
+    } catch (e) {
+      toast((e as Error).message || "没成功", true);
+    }
+  };
   return (
     <section>
       <h2>网站</h2>
       <p className="meta">大豆在这台机器上开的内网网页。同事要能打开，Windows 防火墙要放行对应端口（只放 10.x 内网）。新加的网站也会出现在这里。</p>
       <div className="sites">
         {error ? "读取失败。" : !data ? "正在读取…" : !data.sites.length ? "还没有网站。" : data.sites.map((site) => (
-          <div className="site" key={site.port}>
+          <div className={"site" + (site.open === false ? " site-closed" : "")} key={site.port}>
             <div className="site-top">
               <span className="site-ico" style={{ background: site.color }}>{site.icon}</span>
               <div><div className="site-name">{site.name}</div><div className="site-port">路径 {site.port}</div></div>
               <span className={"dot " + (site.online ? "up" : "down")}>● {site.online ? "在线" : "没起来"}</span>
             </div>
             <div className="site-desc">{site.desc}</div>
+            {site.open !== undefined && (
+              <label className="switch site-open">
+                <input type="checkbox" checked={site.open} onChange={(e) => setOpen(site.port, e.target.checked)} />
+                <span></span>{site.open ? "开放给大家" : "已关闭：普通用户看不到"}
+              </label>
+            )}
             <div className="site-url">{site.url}</div>
             {site.private !== undefined && (
               <label className="site-private" title={site.private_note}>

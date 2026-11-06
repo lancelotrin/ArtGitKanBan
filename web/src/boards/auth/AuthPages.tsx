@@ -6,10 +6,10 @@ import "./auth.css";
 
 export interface Me { open_id: string; name: string; department?: string; avatar: string; role: string; first_login: string; last_login: string }
 export interface Site { name: string; icon: string; color: string; port: string; desc: string; manage: string; url: string; local: string; online: boolean;
-  private?: boolean; private_note?: string }
+  private?: boolean; private_note?: string; open?: boolean }
 
 export const useMe = () => useQuery({ queryKey: ["me"], queryFn: () => api<Me>("/me"), staleTime: 60_000 });
-export const useSites = () => useQuery({ queryKey: ["sites"], queryFn: () => api<{ sites: Site[] }>("/sites"), refetchInterval: 30_000 });
+export const useSites = () => useQuery({ queryKey: ["sites"], queryFn: () => api<{ sites: Site[]; closed?: string[] }>("/sites"), refetchInterval: 30_000 });
 
 // 退出走 console/server.py 的 /api/logout（它管登录 cookie）。
 export async function logout() {

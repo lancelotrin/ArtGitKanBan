@@ -182,6 +182,30 @@ class BoardsApiTest(unittest.TestCase):
         self.admin.post("/api/v1/admin/sites", json={"action": "private", "port": "/review", "on": False})
         self.assertEqual(len(self.user.get("/api/v1/reviews/days").json()["people"]), 2)
 
+    def test_board_closed_for_users(self) -> None:
+        ports = lambda client: [s["port"] for s in client.get("/api/v1/sites").json()["sites"]]
+        self.assertTrue(all(s["open"] for s in self.admin.get("/api/v1/sites").json()["sites"]))
+        self.assertEqual(self.user.post("/api/v1/admin/sites", json={"action": "open", "port": "/wish", "on": False}).status_code, 403)
+        self.assertEqual(self.admin.post("/api/v1/admin/sites", json={"action": "open", "port": "/nope", "on": False}).status_code, 400)
+        # 「只看自己的」和「开放」是两个开关，互不覆盖
+        self.admin.post("/api/v1/admin/sites", json={"action": "private", "port": "/review", "on": True})
+        sites = self.admin.post("/api/v1/admin/sites", json={"action": "open", "port": "/wish", "on": False}).json()["sites"]
+        self.assertEqual({s["port"]: s["open"] for s in sites}["/wish"], False)
+        self.assertTrue(board_access.is_private("/review"))
+        # 普通用户：导航里没有，接口 403，closed 里带上
+        self.assertNotIn("/wish", ports(self.user))
+        self.assertEqual(self.user.get("/api/v1/sites").json()["closed"], ["/wish"])
+        self.assertEqual(self.user.get("/api/v1/wishes").status_code, 403)
+        self.assertEqual(self.user.post("/api/v1/wishes", json={"title": "x"}).status_code, 403)
+        self.assertEqual(self.user.get("/api/v1/bombs").status_code, 200)
+        # 管理员照常
+        self.assertIn("/wish", ports(self.admin))
+        self.assertEqual(self.admin.get("/api/v1/wishes").status_code, 200)
+        self.assertEqual(self.admin.get("/api/v1/sites").json()["closed"], [])
+        self.admin.post("/api/v1/admin/sites", json={"action": "open", "port": "/wish", "on": True})
+        self.assertIn("/wish", ports(self.user))
+        self.assertEqual(self.user.get("/api/v1/wishes").status_code, 200)
+
     # ---------- 合并确认 ----------
 
     def test_merge_permissions_and_projects(self) -> None:

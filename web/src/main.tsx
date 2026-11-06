@@ -1,10 +1,10 @@
-import { lazy, StrictMode, Suspense } from "react";
+import { lazy, type ReactNode, StrictMode, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Link, Outlet, Route, Routes } from "react-router";
 import "./base.css";
 import AdminConsole from "./boards/admin/AdminConsole";
-import { LoginPage, Portal, useMe } from "./boards/auth/AuthPages";
+import { LoginPage, Portal, useMe, useSites } from "./boards/auth/AuthPages";
 import BombBoard from "./boards/bomb/BombBoard";
 import HelpBoard from "./boards/help/HelpBoard";
 import MergeBoard from "./boards/merge/MergeBoard";
@@ -36,7 +36,14 @@ function Shell() {
   );
 }
 
-// 加页面时：这里加一条路由，并把路径加进 backend/app.py 的 SPA_ROUTES、console.sites_view 的子站表。
+/** 管理员关掉的看板：普通用户打开时只显示「已关闭」（接口那边也会 403）。 */
+function Gate({ port, children }: { port: string; children: ReactNode }) {
+  const closed = useSites().data?.closed ?? [];
+  if (closed.includes(port)) return <p style={{ padding: 24 }}>这个看板管理员暂时关闭了。<Link to="/">回大豆</Link></p>;
+  return <>{children}</>;
+}
+
+// 加页面时：这里加一条路由，并把路径加进 backend/app.py 的 SPA_ROUTES、console.sites_view 的子站表、boards/board_access.py 的 API_PREFIXES。
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
@@ -46,13 +53,13 @@ createRoot(document.getElementById("root")!).render(
           <Route element={<Shell />}>
             <Route path="/" element={<Home />} />
             <Route path="/index.html" element={<Home />} />
-            <Route path="/wish/*" element={<WishBoard />} />
-            <Route path="/bomb/*" element={<BombBoard />} />
-            <Route path="/review/*" element={<ReviewBoard />} />
-            <Route path="/merge/*" element={<MergeBoard />} />
-            <Route path="/chat" element={<Chat />} />
-            <Route path="/chat/:id" element={<Chat />} />
-            <Route path="/help/*" element={<HelpBoard />} />
+            <Route path="/wish/*" element={<Gate port="/wish"><WishBoard /></Gate>} />
+            <Route path="/bomb/*" element={<Gate port="/bomb"><BombBoard /></Gate>} />
+            <Route path="/review/*" element={<Gate port="/review"><ReviewBoard /></Gate>} />
+            <Route path="/merge/*" element={<Gate port="/merge"><MergeBoard /></Gate>} />
+            <Route path="/chat" element={<Gate port="/chat"><Chat /></Gate>} />
+            <Route path="/chat/:id" element={<Gate port="/chat"><Chat /></Gate>} />
+            <Route path="/help/*" element={<Gate port="/help"><HelpBoard /></Gate>} />
             <Route path="*" element={<p style={{ padding: 24 }}>没有这个页面。<Link to="/">回大豆</Link></p>} />
           </Route>
         </Routes>

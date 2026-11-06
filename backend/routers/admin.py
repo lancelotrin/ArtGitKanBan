@@ -33,7 +33,7 @@ WRITES = {
     "bomb": "炸线提醒：action=on/off/now（minutes、days）、groups、ignore_paths",
     "review": "自检复盘：action=add/remove（name、git_author）、dm（git_author、on：勾选私聊，按姓名自动找 open_id）、run（date）、groups",
     "bilibili": "B 站登录：action=qr/qr_poll，或 cookie",
-    "sites": "看板「只看自己的」开关：action=private，port（如 /review），on",
+    "sites": "看板开关：action=open（开放给普通用户）或 private（只看自己的），port（如 /review），on",
     "checkout": "把工作区切到某个分支：branch",
     "pull": "定时拉代码：enabled、hours、run_now",
     "watch": "盯目录：enabled、minutes、days、rules、run_now",

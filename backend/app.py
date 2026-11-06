@@ -50,6 +50,18 @@ async def validation_error(_request: Request, error: RequestValidationError) -> 
                         status_code=422)
 
 
+@app.middleware("http")
+async def closed_boards(request: Request, call_next):
+    """管理员关掉的看板：普通用户调它的接口一律 403（页面照常给，前端看到 closed 列表自己显示「已关闭」）。"""
+    from boards import board_access
+    path = request.url.path
+    if path.startswith("/api/v1/") and board_access.board_of(path):
+        user = auth.session_user(request.cookies.get(auth.COOKIE, ""))
+        if board_access.closed_for(path, user):
+            return JSONResponse({"message": board_access.CLOSED_MESSAGE, "closed": True}, status_code=403)
+    return await call_next(request)
+
+
 for _router in (core.router, wish.router, bomb.router, review.router, merge.router, chat.router, help.router, admin.router):
     app.include_router(_router, prefix="/api/v1")
 

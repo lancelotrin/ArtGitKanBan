@@ -588,9 +588,13 @@ def admin_post(path: str, data: dict, user: dict) -> tuple:
             return _reply({"stopped": stop_bot()})
         if path == "/api/sites":
             from boards import board_access
-            if str(data.get("action") or "") != "private":
+            action = str(data.get("action") or "")
+            if action == "private":
+                board_access.set_private(str(data.get("port") or ""), bool(data.get("on")))
+            elif action == "open":
+                board_access.set_hidden(str(data.get("port") or ""), not data.get("on"))
+            else:
                 raise ValueError("不认识的操作。")
-            board_access.set_private(str(data.get("port") or ""), bool(data.get("on")))
             return _reply(dict(sites_view(), ok=True))
         if path in ("/api/models", "/api/config"):
             return _reply({"error": ENV_ONLY}, 400)
@@ -896,8 +900,17 @@ class Handler(BaseHTTPRequestHandler):
             return True
         return False
 
+    def closed_board(self) -> bool:
+        """管理员关掉的看板，普通用户打开 /merge/s/... 这种不走新后端的页面也拦下（新后端的接口它自己拦）。"""
+        from boards import board_access
+        path = urlparse(self.path).path
+        if not board_route(path, BOARD_API["exclude"]) or not board_access.closed_for(path, self.user):
+            return False
+        self.send_json({"message": board_access.CLOSED_MESSAGE, "closed": True}, 403)
+        return True
+
     def handle_any(self, method: str) -> None:
-        if self.gate(method) or self.proxied(method) or self.mounted(method):
+        if self.gate(method) or self.closed_board() or self.proxied(method) or self.mounted(method):
             return
         self.send_json({"message": "没有这个页面。"}, 404)
 
@@ -934,7 +947,8 @@ def site_online(port: int) -> bool:
 
 
 def sites_view(user: dict = None) -> dict:
-    """子站表。给了 user 时按「只看自己的」开关过滤：普通用户不在名单里的看板不显示。"""
+    """子站表。给了 user 时按开关过滤：普通用户看不到管理员关掉的看板，「只看自己的」看板不在名单里也不显示。
+    closed 列出对这个人关掉的看板路径，前端拿它在页面上显示「已关闭」。"""
     from bot import echo_bot
     from boards import board_access, review_board
     # review_web_base() 形如 http://10.234.30.83/review（80 端口不带端口号）或 http://10.234.30.83:8765/review，
@@ -959,10 +973,14 @@ def sites_view(user: dict = None) -> dict:
             site["private_note"] = board_access.SUPPORTED[site["port"]]
             if site["private"]:
                 site["desc"] = site["desc"].replace("所有人都能看", "每个人只看得到自己的")
+    closed = board_access.load_hidden()
+    for site in sites:
+        site["open"] = site["port"] not in closed
     if user is not None and user.get("role") != "admin":
         hidden = {"/review"} if private.get("/review") and not review_board.own_files(user) else set()
-        sites = [site for site in sites if site["port"] not in hidden]
-    return {"sites": sites}
+        sites = [site for site in sites if site["port"] not in hidden | closed]
+        return {"sites": sites, "closed": sorted(closed)}
+    return {"sites": sites, "closed": []}
 
 
 def review_view() -> dict:
