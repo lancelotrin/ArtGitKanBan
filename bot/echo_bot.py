@@ -27,6 +27,8 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from bot import bomb
+from bot import cicd
+from bot import doc_watch
 from boards import bomb_board
 from common import codex_cli
 from bot import local_edit
@@ -7788,6 +7790,204 @@ def reminder_loop() -> None:
         time.sleep(20)
 
 
+# ---------- 监修文档监听 / CICD 打包通知（移植自 FeishuKonwledgeBot，见 bot/doc_watch.py、bot/cicd.py） ----------
+
+DOC_WATCHER = None
+CICD_NOTIFIER = None
+
+
+def feishu_api(method: str, path: str, params: dict = None, data=None) -> dict:
+    """以机器人身份调飞书接口，统一成 {"code": 0, "data": {...}}；失败时 code 是飞书错误码（拿不到时 -1），不抛异常。"""
+    args = LARK_CLI + ["api", method, path, "--as", "bot"]
+    if params:
+        args += ["--params", json.dumps(params, ensure_ascii=False)]
+    if data is not None:
+        args += ["--data", "-"]
+    try:
+        result = subprocess.run(args, input=json.dumps(data, ensure_ascii=False) if data is not None else None,
+                                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                                timeout=CLI_TIMEOUT, creationflags=NO_WINDOW)
+        # 成功的 JSON 在 stdout；接口报错（ok: false + 错误码）lark-cli 写在 stderr
+        output = result.stdout.strip() or result.stderr.strip()
+        payload = json.loads(output[output.find("{"):] if "{" in output else output)
+    except (OSError, subprocess.TimeoutExpired, ValueError) as error:
+        log(f"[feishu-api] {method} {path} failed {type(error).__name__}: {str(error)[:200]}")
+        return {"code": -1}
+    if payload.get("ok", payload.get("code") == 0):
+        return {"code": 0, "data": payload.get("data") or {}}
+    error = payload.get("error") if isinstance(payload.get("error"), dict) else {}
+    code = error.get("code") or payload.get("code") or -1
+    return {"code": int(code) if str(code).lstrip("-").isdigit() else -1, "msg": error.get("message") or payload.get("msg") or ""}
+
+
+def send_dm_markdown(open_id: str, markdown: str) -> int:
+    """私聊一条 post（md 段落），返回飞书错误码。"""
+    text = redact(re.sub(r"\n{3,}", "\n\n", markdown).strip())
+    content = json.dumps({"zh_cn": {"content": [[{"tag": "md", "text": text}]]}}, ensure_ascii=False)
+    body = feishu_api("POST", "/open-apis/im/v1/messages", {"receive_id_type": "open_id"},
+                      {"receive_id": open_id, "msg_type": "post", "content": content})
+    return body["code"]
+
+
+def send_chat_card(chat_id: str, card: dict) -> int:
+    body = feishu_api("POST", "/open-apis/im/v1/messages", {"receive_id_type": "chat_id"},
+                      {"receive_id": chat_id, "msg_type": "interactive", "content": card_content(card)})
+    return body["code"]
+
+
+def reply_at_all(message_id: str, text: str) -> int:
+    content = json.dumps({"text": f'<at user_id="all"></at> {text}'}, ensure_ascii=False)
+    return feishu_api("POST", f"/open-apis/im/v1/messages/{message_id}/reply", None,
+                      {"msg_type": "text", "content": content})["code"]
+
+
+def background_ask(messages: list, timeout: float = 0) -> str:
+    """后台任务用的 AI：Codex（可限时）优先，失败且配了智谱时退回智谱。不带聊天历史和调教。"""
+    if USE_CODEX:
+        name = codex_cli.label()
+        try:
+            answer, usage = codex_cli.ask(messages, timeout=timeout)
+            model_stats.note(name, True, prompt_tokens=int(usage.get("input_tokens") or 0),
+                             completion_tokens=int(usage.get("output_tokens") or 0))
+            return answer
+        except (codex_cli.CodexError, codex_cli.CodexTimeout, OSError) as error:
+            model_stats.note(name, False, redact(f"{type(error).__name__}: {error}"))
+            if not LLM_API_KEY:
+                raise
+            log(f"[codex] 后台任务退回智谱：{str(error)[:120]}")
+    if not LLM_API_KEY:
+        raise ValueError("没有可用的 AI（Codex 没装，也没配 LLM_API_KEY）")
+    return call_chat(LLM_MODEL, messages, LLM_FALLBACK_MODELS)
+
+
+def cicd_project_context(query: str) -> str:
+    hits = search_code_ondemand(build_code_keywords(query, []))
+    return "\n\n".join(f"文件 {path}\n{snippet}" for path, snippet in hits)
+
+
+def name_by_open_id(open_id: str) -> str:
+    for name, ids in bot_known_people().items():
+        if open_id in ids:
+            return name
+    return ""
+
+
+def read_name_map(path: str) -> dict:
+    try:
+        with open(path, encoding="utf-8") as file:
+            value = json.load(file)
+        return value if isinstance(value, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def env_flag(name: str, default: bool) -> bool:
+    value = get_env(name).strip().lower()
+    if not value:
+        return default
+    return value not in ("0", "false", "no", "off")
+
+
+def env_int(name: str, default: int, low: int, high: int) -> int:
+    try:
+        return min(high, max(low, int(get_env(name) or default)))
+    except ValueError:
+        return default
+
+
+def setup_doc_watch():
+    """data/doc_watch/config.json 存在且 enabled 时建监听器；ask 用 Codex / 智谱。"""
+    global DOC_WATCHER
+    try:
+        config, mapping = doc_watch.load_settings()
+    except (OSError, ValueError) as error:
+        log(f"[文档监测] 读取 data/doc_watch 配置失败，不启动：{error}")
+        return None
+    if not config:
+        return None
+    DOC_WATCHER = doc_watch.DocWatcher(feishu_api, send_dm_markdown, background_ask if LLM_ENABLED else None,
+                                       mapping, config, log=log, report=log)
+    return DOC_WATCHER
+
+
+def setup_cicd():
+    """CICD 打包通知 + 分析接口 + Zeus 提醒。CICD_ANALYZE_ENABLED=false 时全关。"""
+    global CICD_NOTIFIER
+    if not env_flag("CICD_ANALYZE_ENABLED", True):
+        return
+    also_at = [x for x in re.split(r"[,，、\s]+", get_env("CICD_FAILURE_ALSO_AT")) if x]
+    name_sources = [
+        lambda name: read_name_map(os.path.join(doc_watch.DATA_ROOT, "bindings.json")).get(name) or "",
+        lambda name: next((oid for oid, v in read_name_map(cicd.OPENIDS_PATH).items()
+                           if isinstance(v, dict) and v.get("name") == name), ""),
+    ]
+    chat_name = get_env("CICD_NOTIFY_CHAT_NAME") or "打包机器人"
+    CICD_NOTIFIER = cicd.CicdNotifier(feishu_api, send_chat_card, chat_name=chat_name,
+                                      chat_id=get_env("CICD_NOTIFY_CHAT_ID"), failure_also_at=also_at,
+                                      name_sources=name_sources, name_of=name_by_open_id, log=log, report=log)
+    timeout = env_int("CICD_AI_TIMEOUT_SECONDS", 105, 10, 115)
+    cicd.start_analysis_server(
+        get_env("CICD_ANALYZE_HOST") or "127.0.0.1", env_int("CICD_ANALYZE_PORT", 3210, 1, 65535),
+        get_env("CICD_ANALYZE_TOKEN"), lambda messages: background_ask(messages, timeout), cicd_project_context,
+        notifier=CICD_NOTIFIER, reply_budget=env_int("CICD_REPLY_BUDGET_SECONDS", 100, 20, 115), log=log, report=log)
+    if env_flag("ZEUS_WATCH_ENABLED", True):
+        zeus = cicd.ZeusWatcher(
+            feishu_api, reply_at_all, CICD_NOTIFIER.resolve_chat,
+            sender_id=get_env("ZEUS_WATCH_SENDER") or "cli_c08abc1da138d00f",
+            title=get_env("ZEUS_WATCH_TITLE") or "Zeus热更系统提醒",
+            text=get_env("ZEUS_WATCH_TEXT") or "请留意上面的 Zeus 热更系统提醒，及时登录 Zeus 热更后台发布正式版本。",
+            interval=env_int("ZEUS_WATCH_SECONDS", 30, 10, 3600), log=log, report=log)
+        threading.Thread(target=zeus.loop, name="zeus-watch", daemon=True).start()
+        log(f"[Zeus 提醒] 已开启：每 {zeus.interval} 秒检查打包群，看到「{zeus.title}」就回复 @所有人。")
+
+
+def doc_watch_item(message: dict) -> dict:
+    """私聊给文档监测的消息：@ 换成「@姓名」（/bind @某人 要用），带上被 @ 的人。"""
+    data = parse_content(message)
+    text = str(data.get("text", "")) if message.get("message_type") == "text" else post_plain_text(data)
+    mentions = []
+    for mention in message.get("mentions") or []:
+        key = str(mention.get("key") or "")
+        name = str(mention.get("name") or "")
+        ident = mention.get("id") or {}
+        open_id = ident.get("open_id") if isinstance(ident, dict) else str(ident or "")
+        if key:
+            text = text.replace(key, f"@{name}")
+        if open_id and not is_bot_mention(name, ident):
+            mentions.append({"name": name, "openId": open_id})
+    return {"text": text.strip(), "userId": message.get("_sender_open_id", ""), "mentions": mentions}
+
+
+def answer_doc_changes(question: str, context: str) -> str:
+    """「监修文档刚改了什么」：用文档监测记下的最近变更回答。不归这里管时返回空。"""
+    if not DOC_WATCHER or not doc_watch.asks_about_changes(question, context, [d["name"] for d in DOC_WATCHER.docs]):
+        return ""
+    changes = DOC_WATCHER.recent_changes()
+    if not changes:
+        return "最近 7 天监修文档没有检测到变更。"
+    if not LLM_ENABLED:
+        return changes[:3000]
+    system = ("你是「大豆」，航海王项目组的助手。下面是机器人监测到的监修文档最近变更记录（新的在前），只按这些记录回答同事的问题，"
+              "说清是哪篇文档、哪个标题下改了什么，附上文档链接；记录里没有的不要编。日文先翻成中文。"
+              "用适合飞书的简短 Markdown，不要表格。\n\n【监修文档最近变更】\n" + changes)
+    try:
+        return call_llm(system, question)
+    except Exception as error:
+        log(f"[文档监测] 回答变更问题失败：{error}")
+        return changes[:3000]
+
+
+def run_doc_watch_cli(argv: list) -> None:
+    """python -m bot --doc-watch [--dry-run] [--force] [--digest]：立即检查一次 / 预览日报，不连飞书长连接。"""
+    if not setup_doc_watch():
+        sys.exit("没有启用文档监测：先放好 data/doc_watch/config.json（enabled: true）和 mapping.json")
+    dry_run = "--dry-run" in argv
+    if "--digest" in argv:
+        print(DOC_WATCHER.digest(dry_run=dry_run))
+    else:
+        print(DOC_WATCHER.check(dry_run=dry_run, force="--force" in argv))
+
+
 def handle(message_id: str, message: dict, local_index: list) -> None:
     try:
         chat_id = message.get("chat_id", "")
@@ -7804,6 +8004,21 @@ def handle(message_id: str, message: dict, local_index: list) -> None:
                 note = accept_agent_payload(payload, message.get("_sender_open_id", ""))
                 if note:
                     reply(message_id, note, route="local-agent")
+                return
+        sender_id = message.get("_sender_open_id", "")
+        if CICD_NOTIFIER:
+            note = CICD_NOTIFIER.handle_command(raw_question, message.get("chat_type") or "", chat_id, sender_id)
+            if note:
+                reply(message_id, note, route="cicd")
+                return
+        if DOC_WATCHER and message.get("chat_type") in ("p2p", "private") and sender_id:
+            try:
+                note = DOC_WATCHER.handle_direct_message(doc_watch_item(message))
+            except Exception as error:
+                log(f"[文档监测] 私聊指令出错：{error}")
+                note = None
+            if note:
+                reply(message_id, note, route="doc-watch")
                 return
         if RECALL_PATTERN.search(raw_question):
             target_id = parent_message_id(message) or LAST_BOT_MESSAGE.get(chat_id, "")
@@ -7848,6 +8063,10 @@ def handle(message_id: str, message: dict, local_index: list) -> None:
         policy = doc_policy_answer(raw_question)
         if policy:
             reply(message_id, policy, route="policy")
+            return
+        doc_changes = answer_doc_changes(raw_question, f"{raw_question}\n{parent_text}")
+        if doc_changes:
+            reply(message_id, doc_changes, markdown=True, route="doc-watch")
             return
         if REFERENTIAL_PATTERN.search(raw_question) and not image_keys:
             reply(message_id, "我没拿到被回复的那张图，所以没法判断是谁。请把图片直接发给我，并 @大豆。", route="image")
@@ -8118,6 +8337,9 @@ def main() -> None:
     os.chdir(ROOT_DIR)
     if not LARK_CLI:
         sys.exit("找不到 lark-cli，请先安装：npm i -g @larksuite/cli")
+    if "--doc-watch" in sys.argv:
+        run_doc_watch_cli(sys.argv)
+        return
     if not os.path.isdir(PROJECT_ROOT):
         log(f"[start] 工程目录不存在：{PROJECT_ROOT}，设置 FEISHU_BOT_PROJECT_ROOT 指向 Client 目录")
     log(f"[start] project={PROJECT_ROOT}")
@@ -8131,6 +8353,11 @@ def main() -> None:
     threading.Thread(target=bomb_loop, name="bomb", daemon=True).start()
     threading.Thread(target=review_loop, name="review", daemon=True).start()
     threading.Thread(target=reminder_loop, name="reminder", daemon=True).start()
+    if setup_doc_watch():
+        threading.Thread(target=DOC_WATCHER.loop, name="doc-watch", daemon=True).start()
+        minutes = " / ".join(f":{int(m):02d}" for m in DOC_WATCHER.config.get("checkMinutes") or [0, 30])
+        log(f"[文档监测] 已启动：监测 {'、'.join(d['name'] for d in DOC_WATCHER.docs)}，每小时 {minutes} 检查。")
+    setup_cicd()
     local_index = load_local_index()
     DIR_INDEX.extend(load_dir_index())
     log(f"[start] dir_index={len(DIR_INDEX)} notes={len(load_notes())}")
