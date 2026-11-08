@@ -13,6 +13,8 @@ from fastapi.testclient import TestClient
 from common import auth
 from boards import board_access
 from boards import bomb_board
+from boards import doc_watch_board
+from bot import doc_watch
 from console import server as console
 from boards import merge_web
 from boards import review_board
@@ -38,6 +40,7 @@ class BoardsApiTest(unittest.TestCase):
             (board_access, "PRIVATE_PATH"): board_access.PRIVATE_PATH,
             (review_board, "REVIEW_SUBS_PATH"): review_board.REVIEW_SUBS_PATH,
             (console, "NOTES_PATH"): console.NOTES_PATH, (console, "PEOPLE_PATH"): console.PEOPLE_PATH,
+            (doc_watch_board, "ROOT"): doc_watch_board.ROOT, (doc_watch, "CONFIG_PATH"): doc_watch.CONFIG_PATH,
         }
         auth.USERS_PATH = os.path.join(root, "users.json")
         auth.SESSIONS_PATH = os.path.join(root, "sessions.json")
@@ -50,6 +53,8 @@ class BoardsApiTest(unittest.TestCase):
         review_board.REVIEW_SUBS_PATH = os.path.join(root, "review_subs.json")
         console.NOTES_PATH = os.path.join(root, "notes.json")
         console.PEOPLE_PATH = os.path.join(root, "people.json")
+        doc_watch_board.ROOT = os.path.join(root, "doc_watch")
+        doc_watch.CONFIG_PATH = os.path.join(root, "doc_watch", "config.json")
         users = {"ou_admin": {"open_id": "ou_admin", "name": "管理员", "role": "admin"},
                  "ou_user": {"open_id": "ou_user", "name": "同事", "role": "user"}}
         self.write(auth.USERS_PATH, users)
@@ -101,7 +106,7 @@ class BoardsApiTest(unittest.TestCase):
     def test_me_and_sites(self) -> None:
         self.assertEqual(self.user.get("/api/v1/me").json()["role"], "user")
         sites = self.user.get("/api/v1/sites").json()["sites"]
-        self.assertEqual([s["port"] for s in sites], ["/review", "/wish", "/bomb", "/merge", "/chat", "/help"])
+        self.assertEqual([s["port"] for s in sites], ["/review", "/wish", "/bomb", "/merge", "/chat", "/docwatch", "/help"])
 
     # ---------- 炸线 ----------
 
@@ -126,6 +131,41 @@ class BoardsApiTest(unittest.TestCase):
         data = self.user.post("/api/v1/bombs/resolve", json={"key": "merge:abc", "resolved": False}).json()
         self.assertFalse(data["records"][0]["resolved"])
         self.assertEqual(self.user.post("/api/v1/bombs/resolve", json={"key": "merge:nope"}).status_code, 404)
+
+    # ---------- 监修改动 ----------
+
+    def test_docwatch(self) -> None:
+        root = doc_watch_board.ROOT
+        self.write(os.path.join(root, "config.json"), {"enabled": True, "docs": [{"name": "监修同步", "wikiToken": "TOK"}],
+                                                       "mapping": "mapping.json", "clarify": {"asker": "张天佑"}})
+        self.write(os.path.join(root, "mapping.json"), {
+            "routes": [{"key": "battle", "name": "战斗", "owner": "殷琦", "keywords": ["技能"]}],
+            "features": [{"name": "SSR 艾斯", "route": "battle", "owner": "郭彦辰", "keywords": ["艾斯"]}],
+            "owners": {"殷琦": {"role": "战斗组长"}}})
+        rows = [{"time": "2026-11-04 13:00:39", "doc": "监修同步", "token": "TOK", "condensed": {},
+                 "items": [{"kind": "added", "section": "议题 / 艾斯", "text": "艾斯技能icon"}]},
+                {"time": "2026-11-05 10:00:00", "doc": "监修同步", "token": "TOK", "condensed": {},
+                 "recipients": {"殷琦": "OK", "万汩": "SKIP"}, "items": [{"kind": "changed", "section": "议题 / 布景", "text": "技能"}]}]
+        with open(os.path.join(root, "changes-log.jsonl"), "w", encoding="utf-8") as handle:
+            handle.write("\n".join(json.dumps(r, ensure_ascii=False) for r in rows) + "\n")
+        with open(os.path.join(root, "notify-log.jsonl"), "w", encoding="utf-8") as handle:
+            handle.write(json.dumps({"time": "2026-11-04 13:00:38", "token": "TOK", "owner": "郭彦辰", "count": 1}, ensure_ascii=False) + "\n")
+        self.write(os.path.join(root, "analysis.json"), {"TOK@2026-11-05 10:00:00": {
+            "summary": "布景技能调整", "people": [{"name": "殷琦", "reason": "战斗", "role": "战斗组长"}],
+            "sections": [{"section": "议题 / 布景", "points": ["技能改了"], "features": [], "people": []}]}})
+        self.write(os.path.join(root, "pending.json"), {"议题 / 其他": {"docTitle": "监修同步", "text": "x", "link": "", "askedAt": "2026-11-05 11:00:00"}})
+        data = self.user.get("/api/v1/docwatch").json()
+        newest, older = data["batches"]
+        self.assertEqual((newest["source"], newest["summary"], newest["recipients"]["万汩"]), ("ai", "布景技能调整", "SKIP"))
+        self.assertEqual(newest["sections"][0]["points"], ["技能改了"])
+        self.assertEqual(older["source"], "rule")  # 没分析过的按规则推算
+        self.assertEqual({p["name"] for p in older["people"]}, {"殷琦", "郭彦辰"})
+        self.assertEqual(older["features"], ["SSR 艾斯"])
+        self.assertEqual(older["recipients"], {"郭彦辰": "OK"})  # 老批次按时间对上通知记录
+        self.assertEqual(data["pending"][0]["section"], "议题 / 其他")
+        board_access.set_hidden("/docwatch", True)
+        self.assertEqual(self.user.get("/api/v1/docwatch").status_code, 403)
+        self.assertEqual(self.admin.get("/api/v1/docwatch").status_code, 200)
 
     # ---------- 复盘 ----------
 

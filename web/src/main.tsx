@@ -6,6 +6,7 @@ import "./base.css";
 import AdminConsole from "./boards/admin/AdminConsole";
 import { LoginPage, Portal, useMe, useSites } from "./boards/auth/AuthPages";
 import BombBoard from "./boards/bomb/BombBoard";
+import DocWatchBoard from "./boards/docwatch/DocWatchBoard";
 import HelpBoard from "./boards/help/HelpBoard";
 import MergeBoard from "./boards/merge/MergeBoard";
 import ReviewBoard from "./boards/review/ReviewBoard";
@@ -59,6 +60,7 @@ createRoot(document.getElementById("root")!).render(
             <Route path="/merge/*" element={<Gate port="/merge"><MergeBoard /></Gate>} />
             <Route path="/chat" element={<Gate port="/chat"><Chat /></Gate>} />
             <Route path="/chat/:id" element={<Gate port="/chat"><Chat /></Gate>} />
+            <Route path="/docwatch/*" element={<Gate port="/docwatch"><DocWatchBoard /></Gate>} />
             <Route path="/help/*" element={<Gate port="/help"><HelpBoard /></Gate>} />
             <Route path="*" element={<p style={{ padding: 24 }}>没有这个页面。<Link to="/">回大豆</Link></p>} />
           </Route>

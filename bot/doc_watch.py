@@ -393,6 +393,105 @@ def summarize_with_model(title: str, changes: dict, ask) -> str:
     return answer.strip().split("\n")[0]
 
 
+# ---------------------------------------------------------------- 看板：一批改动涉及的人和功能
+
+def batch_id(row: dict) -> str:
+    return f"{row.get('token')}@{row.get('time')}"
+
+
+def mapping_people(mapping: dict) -> dict:
+    """名单里的人 → 职责说明（模块负责人、抄送、功能策划）。"""
+    people = {}
+    for name, info in (mapping.get("owners") or {}).items():
+        people[name] = (info or {}).get("role") or ""
+    for route in mapping.get("routes") or []:
+        label = route.get("name") or route.get("key")
+        if route.get("owner"):
+            people[route["owner"]] = people.get(route["owner"]) or f"{label}负责人"
+        for name in route.get("cc") or []:
+            people.setdefault(name, f"{label}抄送")
+    for feature in mapping.get("features") or []:
+        if feature.get("owner"):
+            people.setdefault(feature["owner"], "功能策划")
+    return people
+
+
+def batch_sections(row: dict) -> list:
+    """一批改动按标题分组：[{section, items: [{kind, text}]}]，保持文档里的顺序。"""
+    groups = {}
+    for item in row.get("items") or []:
+        groups.setdefault(item.get("section") or "", []).append({"kind": item.get("kind"), "text": item.get("text") or ""})
+    return [{"section": section, "items": items} for section, items in groups.items()]
+
+
+def analyze_batch(row: dict, mapping: dict, ask) -> dict:
+    """让 AI 看一批改动：每个标题下改了什么、涉及哪些功能、该谁跟进、为什么。名字和功能只认名单里有的。"""
+    sections = batch_sections(row)[:30]
+    if not sections:
+        return {"summary": "", "sections": [], "people": []}
+    people = mapping_people(mapping)
+    features = mapping.get("features") or []
+    routes = "\n".join(f"- {r.get('name') or r['key']}：负责人 {r.get('owner') or '无'}"
+                       f"{'，抄送 ' + '、'.join(r['cc']) if r.get('cc') else ''}；关键词 {'、'.join((r.get('keywords') or [])[:10])}"
+                       for r in mapping.get("routes") or [])
+    feature_text = "\n".join(f"- {f.get('name')}（策划 {f.get('owner')}）：{'、'.join((f.get('keywords') or [])[:6])}"
+                             for f in features if f.get("owner"))
+    rules = "\n".join(f"- {x}" for x in mapping.get("_已确认规则") or [])
+    system = "\n\n".join(x for x in (
+        "你是游戏项目（航海王手游）的策划助理，帮策划看懂版权方监修文档的改动。",
+        f"模块和负责人：\n{routes}",
+        f"功能对照表（功能名 / 负责策划 / 关键词）：\n{feature_text}" if feature_text else "",
+        f"已确认的分工规则：\n{rules}" if rules else "",
+        "对每一组改动：用中文写 1~3 条要点（日文先翻成中文，每条不超过 50 字，说清改了什么、要谁做什么或确认什么）；"
+        "列出涉及的功能（只能用功能对照表里的功能名，没有就给空数组）；列出需要跟进的人（只能用上面出现过的姓名），"
+        "每人一句理由（不超过 30 字）。最后给整批一句话概括（40 字以内）和整批需要跟进的人（去重，带理由）。",
+        "只输出 JSON，不要解释，格式："
+        '{"summary":"…","sections":[{"i":0,"points":["…"],"features":["…"],"people":[{"name":"…","reason":"…"}]}],'
+        '"people":[{"name":"…","reason":"…"}]}',
+    ) if x)
+    payload = {"doc": row.get("doc"), "groups": [
+        {"i": i, "section": s["section"][-100:] or "（无标题）",
+         "changes": [f"{KIND_LABEL.get(it['kind'], '')}：{it['text'][:200]}" for it in s["items"][:10]]}
+        for i, s in enumerate(sections)]}
+    answer = ask([{"role": "system", "content": system}, {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}])
+    start = answer.find("{")
+    data = json.loads(answer[start:answer.rfind("}") + 1]) if start >= 0 else {}
+    feature_names = {f.get("name") for f in features}
+
+    def clean_people(items) -> list:
+        result, seen = [], set()
+        for p in items if isinstance(items, list) else []:
+            name = str((p or {}).get("name") or "").strip() if isinstance(p, dict) else str(p).strip()
+            if name in people and name not in seen:
+                seen.add(name)
+                result.append({"name": name, "reason": str((p or {}).get("reason") or "")[:60] if isinstance(p, dict) else "",
+                               "role": people[name]})
+        return result
+
+    out_sections = []
+    for s in data.get("sections") or []:
+        try:
+            index = int(s.get("i"))
+            section = sections[index]["section"]
+        except (TypeError, ValueError, IndexError, AttributeError):
+            continue
+        points = [str(x).strip()[:80] for x in s.get("points") or [] if str(x).strip()][:3]
+        out_sections.append({"section": section, "points": points,
+                             "features": [f for f in dict.fromkeys(s.get("features") or []) if f in feature_names],
+                             "people": clean_people(s.get("people"))})
+    all_people = clean_people(data.get("people"))
+    named = {p["name"] for p in all_people}
+    for s in out_sections:  # 分组里提到、整批漏了的人补上
+        for p in s["people"]:
+            if p["name"] not in named:
+                named.add(p["name"])
+                all_people.append(p)
+    return {"summary": str(data.get("summary") or "").strip()[:80], "sections": out_sections, "people": all_people}
+
+
+KIND_LABEL = {"added": "新增", "changed": "修改", "removed": "删除"}
+
+
 # ---------------------------------------------------------------- 监听器
 
 def load_settings() -> tuple:
@@ -404,9 +503,9 @@ def load_settings() -> tuple:
         return None, None
     if not config.get("enabled", True):
         return None, None
-    path = config.get("mapping") or MAPPING_PATH
+    path = config.get("mapping") or os.path.basename(MAPPING_PATH)
     if not os.path.isabs(path):
-        path = os.path.join(DATA_ROOT, path)
+        path = os.path.join(os.path.dirname(CONFIG_PATH), path)
     with open(path, encoding="utf-8") as file:
         mapping = json.load(file)
     return config, mapping
@@ -793,7 +892,9 @@ class DocWatcher:
                     state["attempts"] = int(state.get("attempts") or 0) + 1
                     gave_up = failed and state["attempts"] >= MAX_ATTEMPTS
                     record = {"time": (state.get("pending") or {}).get("time") or stamp(), "doc": doc["title"],
-                              "token": doc["token"], "condensed": condensed,
+                              "token": doc["token"], "condensed": condensed, "sentence": sentence,
+                              "recipients": {n: ("OK" if n in state["sent"] else r.split("：")[0][:60])
+                                             for n, r in results.items()},
                               "items": [{"kind": kind, "section": item.get("section") or "", "text": item["text"][:300]}
                                         for kind in KINDS for item in [i for i in changes[kind] if not i.get("level")][:80]]}
                     # SKIP（没 open_id / 退订）是配置问题，不拦基线；真发送失败保留旧基线下轮重试（最多 MAX_ATTEMPTS 轮）
@@ -859,6 +960,51 @@ class DocWatcher:
             used += len(part)
         return "\n\n".join(parts)
 
+    # ------------------------------------------------ 看板用的 AI 分析
+    def analyze_pending(self, limit: int = 5) -> int:
+        """给还没分析过的变更批次（新的先）跑 AI 分析，存 analysis.json。返回这次分析了几批。"""
+        if self.ask is None:
+            return 0
+        done = 0
+        for row in sorted(self.read_rows("changes-log.jsonl"), key=lambda r: r.get("time") or "", reverse=True):
+            if done >= limit:
+                break
+            key = batch_id(row)
+            analyses = self.load("analysis.json", {})
+            if key in analyses and not analyses[key].get("error"):
+                continue
+            if analyses.get(key, {}).get("tries", 0) >= 3:
+                continue  # 连着失败 3 次的不再试
+            try:
+                result = analyze_batch(row, self.mapping, self.ask)
+            except Exception as error:
+                result = {"error": str(error)[:200], "tries": analyses.get(key, {}).get("tries", 0) + 1}
+                self.report(f"[文档监测] 分析《{row.get('doc')}》{row.get('time')} 失败：{str(error)[:120]}")
+            result["at"] = stamp()
+            with self._file_lock:
+                analyses = self.load("analysis.json", {})
+                analyses[key] = result
+                self.save("analysis.json", analyses)
+            done += 1
+        return done
+
+    def start_analysis(self) -> None:
+        """后台补分析，不挡定时检查；正在跑就不再开。"""
+        if getattr(self, "_analysis_running", False) or self.ask is None:
+            return
+        self._analysis_running = True
+
+        def run():
+            try:
+                while self.analyze_pending(limit=3):
+                    pass
+            except Exception as error:
+                self.report(f"[文档监测] 分析出错：{error}")
+            finally:
+                self._analysis_running = False
+
+        threading.Thread(target=run, name="doc-watch-analysis", daemon=True).start()
+
     # ------------------------------------------------ 私聊指令
     def handle_direct_message(self, item: dict):
         """item: {text, userId, mentions: [{name, openId}]}。返回回复文字；None 表示不归这里管。"""
@@ -903,6 +1049,7 @@ class DocWatcher:
             self.log(f"[文档监测 {stamp()}] 启动检查\n{self.check()}")
         except Exception as error:
             self.report(f"[文档监测] 启动检查失败：{error}")
+        self.start_analysis()
         last_slot, last_digest = "", ""
         while True:
             time.sleep(20)
@@ -914,6 +1061,7 @@ class DocWatcher:
                     self.log(f"[文档监测 {stamp(now)}]\n{self.check()}")
                 except Exception as error:
                     self.report(f"[文档监测] 本轮失败：{error}")
+                self.start_analysis()
             if digest_cfg.get("to") and now.hour == digest_hour and now.minute == digest_minute and last_digest != today(now):
                 last_digest = today(now)
                 try:

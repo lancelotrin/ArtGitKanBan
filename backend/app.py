@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 
 from backend.deps import ROOT_DIR, auth
 
-from backend.routers import admin, bomb, chat, core, help, merge, review, wish
+from backend.routers import admin, bomb, chat, core, docwatch, help, merge, review, wish
 
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("BOARD_API_PORT", "8766"))
@@ -22,7 +22,7 @@ DIST_DIR = os.path.join(ROOT_DIR, "web", "dist")
 INDEX_HTML = os.path.join(DIST_DIR, "index.html")
 
 # 路由规则（console.board_route 解析）：以 = 开头是整条路径；以 / 结尾是前缀；其它是前缀且含自身。
-SPA_ROUTES = ("=/", "=/index.html", "=/login", "/wish", "/bomb", "/review", "/merge", "/chat", "/help")
+SPA_ROUTES = ("=/", "=/index.html", "=/login", "/wish", "/bomb", "/review", "/merge", "/chat", "/help", "/docwatch")
 PUBLIC_PAGES = ("=/login",)
 SPA_PREFIXES = tuple(rule for rule in SPA_ROUTES if not rule.startswith("="))
 PROXY_ROUTES = SPA_ROUTES + ("/api/v1", "/static")
@@ -62,7 +62,7 @@ async def closed_boards(request: Request, call_next):
     return await call_next(request)
 
 
-for _router in (core.router, wish.router, bomb.router, review.router, merge.router, chat.router, help.router, admin.router):
+for _router in (core.router, wish.router, bomb.router, review.router, merge.router, chat.router, help.router, docwatch.router, admin.router):
     app.include_router(_router, prefix="/api/v1")
 
 
