@@ -102,6 +102,8 @@ def make_handler(snapshot, db_path):
                     records = [v for v in votes if v["file_id"] == file["id"]] or [{}]
                     for v in records:
                         choice = v.get("choice", "pending")
+                        if choice == "pending" and not file.get("theirs"):
+                            choice = "ours"  # 合入分支无同路径历史：默认用当前分支
                         if choice in ("both", "pending"):
                             stage1 = ((file.get("stages") or {}).get("1") or {}).get("oid")
                             replay_from = file.get("replay_from") or snapshot.get("replay_base") or (f"stage1:{stage1}" if stage1 else "")

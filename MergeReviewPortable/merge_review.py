@@ -40,7 +40,7 @@ HELP = """Merge Review Portable — 局域网合并冲突确认与处理
    防火墙被阻止时，管理员执行 Allow-Lan.ps1 -Port 8767；仅开放 LocalSubnet。
 4. python merge_review.py plan --session "会话目录" --csv "导出的CSV"
    也可省略 --csv，读取本会话网页保存的最新选择。
-   pending / 未列出的文件默认 both。plan 不改仓库。
+   pending / 未列出的文件默认 both；合入分支无同路径历史的默认 ours。plan 不改仓库。
 5. python merge_review.py apply --session "会话目录"
    先检查提交、索引和工作区仍与采集时一致，再备份，执行明确选边和干净重放。
    ours / theirs 是当前分支 / 合入分支的固定版本，与分支实际叫什么无关。
@@ -242,6 +242,8 @@ def capture(repo, out, ours_label=None, theirs_label=None, replay_base=None):
             note += " 当前分支同路径不存在，注意删除/重命名意图。"
         if right is None:
             note += " 合入分支同路径不存在，注意删除/重命名意图。"
+        if not right_history:
+            note += " 合入分支无同路径历史，未选择时默认用当前分支。"
         mapping = any((stages.get(key) or {}).get("oid") != (entry or {}).get("oid") for key, entry in [("2", left), ("3", right)])
         if mapping:
             note += " Git 索引与同路径分支对象存在差异，可能涉及重命名；both 将进入人工队列。"
@@ -280,13 +282,18 @@ def write_review_document(session, snapshot):
              f"- 合入分支：{escape(snapshot['theirs_label'])} / {snapshot['theirs']}",
              f"- 重放基线：{snapshot['replay_base'] or '每个冲突路径的 Git 索引 stage 1'}",
              f"- 冲突路径：{len(snapshot['files'])}；采集不修改仓库。", '',
-             '## 选择规则', '', '未选择默认两边都要：以当前分支为基础，再重放合入分支修改。不是拼接两份文件。', '',
+             '## 选择规则', '', '未选择默认两边都要：以当前分支为基础，再重放合入分支修改。不是拼接两份文件。合入分支无同路径历史的文件，未选择时默认用当前分支。', '',
              '作者/提交人来自固定分支中最近触及同一路径的提交，不等于推送者或最终模块负责人。自动同步提交不代表原始开发者；最近三条历史保存在 snapshot.json 中。', '',
              '本文是静态元数据清单，业务含义、二进制内容、生成物配套与项目编译需结合目标项目继续核对。', '',
              '| 路径 | 分类 | 当前分支最近提交 | 合入分支最近提交 | 提示 |', '| --- | --- | --- | --- | --- |']
     for file in snapshot['files']:
         lines.append(f"| {escape(file['path'])} | {escape(file['category'])} | {attribution(file,'ours')} | {attribution(file,'theirs')} | {escape(file['advice'])} |")
     (session / 'review.md').write_text('\n'.join(lines) + '\n', encoding='utf-8')
+
+
+def default_choice(file):
+    """未选择时的默认：合入分支无同路径历史（多半是那边删除/重命名）默认用当前分支，其余默认 both。"""
+    return "ours" if not file.get("theirs") else "both"
 
 
 def load_session(session):
@@ -329,7 +336,7 @@ def plan_session(session, csv_path=None):
         row = choices.get(file["path"], {})
         choice = row.get("choice", "pending")
         if choice in {"pending", ""}:
-            choice = "both"
+            choice = default_choice(file)
         if choice not in {"ours", "theirs", "both"}:
             raise ReviewError(f"未知选择 {choice}：{file['path']}")
         plan["files"].append({"path": file["path"], "choice": choice,
@@ -536,7 +543,7 @@ def handoff(session, snapshot, state):
     prompt = (f"请在仓库 {snapshot['repo']} 完成会话 {session} 的人工冲突重放。\n"
               f"固定当前分支 {snapshot['ours']}，合入分支 {snapshot['theirs']}，重放基线 {snapshot['replay_base'] or '各路径索引 stage 1'}。\n"
               "先读仓库 AGENTS.md 与项目约定，再读 snapshot.json、plan.json、apply-state.json、manual-replay.md。\n"
-              "明确选边且已解决的路径不要重新选边；both/pending 均是以当前分支为基底，再重放合入分支有效修改。\n"
+              "明确选边且已解决的路径不要重新选边；both/pending 均是以当前分支为基底，再重放合入分支有效修改（合入分支无同路径历史的 pending 已按 ours 处理）。\n"
               "重命名须按正确同路径源对象核对，不能直接采用跨资源配错的 stage 2/3；二进制需理解修改或重新生成，不能拼接。\n"
               "先保留当前分支新增行为与优化，不复活已被有意删除的对象；已包含的修改不重复应用。\n"
               "有业务歧义时列出具体差异并询问；不可把未实施的重放标记完成。项目编译/运行和生成物配套检查后给出限制。\n"

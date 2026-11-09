@@ -140,6 +140,13 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual((self.repo / "asset.bin").read_bytes(), original)
         self.assertFalse((session / "apply-state.json").exists())
 
+    def test_pending_defaults_ours_when_incoming_has_no_path_history(self):
+        self.assertEqual(review.default_choice({"theirs": None}), "ours")
+        self.assertEqual(review.default_choice({"theirs": {"sha": "x"}}), "both")
+        session = self.capture()
+        plan = review.plan_session(session)
+        self.assertTrue(all(f["choice"] == "both" for f in plan["files"]))  # 合入分支都有历史，仍默认 both
+
     def test_csv_wrong_snapshot_duplicate_and_unknown_path(self):
         session = self.capture()
         for bad in ("../outside.txt", "unknown.txt"):

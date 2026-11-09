@@ -19,7 +19,7 @@ Merge Review Portable — 局域网合并冲突确认与处理
    防火墙被阻止时，管理员执行 Allow-Lan.ps1 -Port 8767；仅开放 LocalSubnet。
 4. python merge_review.py plan --session "会话目录" --csv "导出的CSV"
    也可省略 --csv，读取本会话网页保存的最新选择。
-   pending / 未列出的文件默认 both。plan 不改仓库。
+   pending / 未列出的文件默认 both；合入分支无同路径历史的默认 ours。plan 不改仓库。
 5. python merge_review.py apply --session "会话目录"
    先检查提交、索引和工作区仍与采集时一致，再备份，执行明确选边和干净重放。
    ours / theirs 是当前分支 / 合入分支的固定版本，与分支实际叫什么无关。
