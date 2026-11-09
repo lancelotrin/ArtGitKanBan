@@ -2088,6 +2088,13 @@ def handle_image(message_id: str, text: str, image_keys: list, local_index: list
 
 # ---------- Git 只读查询 ----------
 
+def codex_project_dir() -> str:
+    """Codex Code 模式的工作目录：网页后台配的项目目录（.env 的 PROJECT_ROOT），每次现读，改了不用重启。"""
+    from common import settings
+    root = os.path.abspath(settings.project_root())
+    return root if os.path.isdir(root) else PROJECT_ROOT
+
+
 def get_git_root() -> str:
     try:
         result = subprocess.run(
@@ -2880,10 +2887,11 @@ def judge_one_merge(branch: str, item: dict) -> dict:
     """让 Codex 看丢掉那侧的 diff，返回 {路径: "像是误丢：理由"}。失败返回空。"""
     material = bomb.judge_material(bomb_git, item, branch)
     name = codex_cli.label()
+    project_dir = codex_project_dir()
+    prompt = (f"{bomb.JUDGE_PROMPT}\n当前工作目录是项目目录 {project_dir}（在 git 仓库里，材料里的文件路径相对仓库根）。"
+              "只读：不要修改文件，不要 fetch / checkout 等 git 写操作，不要联网。\n\n【材料】\n" + redact(material))
     try:
-        answer, usage = codex_cli.ask([{"role": "system", "content": bomb.JUDGE_PROMPT},
-                                       {"role": "user", "content": redact(material)}], timeout=BOMB_JUDGE_TIMEOUT,
-                                      project_dir=get_git_root(), branches=list(GIT_BRANCHES))
+        answer, usage = codex_cli.code(prompt, project_dir, BOMB_JUDGE_TIMEOUT)
     except (codex_cli.CodexError, codex_cli.CodexTimeout, OSError) as error:
         model_stats.note(name, False, redact(f"{type(error).__name__}: {error}"))
         log(f"[bomb] judge {item.get('merge')} failed {type(error).__name__}: {str(error)[:160]}")
@@ -3979,8 +3987,8 @@ def generate_daily_reviews(day: datetime.date, notify: bool = True) -> str:
 
 
 def review_report(git_root: str, record: dict, commits: list, head_note: str) -> tuple:
-    """Codex 在工程里按整个工程核对。返回 (报告, {提交号: 裁剪 diff})；失败返回空报告，调用方退回逐条模型分析。"""
-    body = review_codex.review(git_root, record["name"], record["git_author"], record["date"], commits, head_note,
+    """Codex 用 Code 模式在网页配的项目目录里按整个工程核对。返回 (报告, {提交号: 裁剪 diff})；失败返回空报告，调用方退回逐条模型分析。"""
+    body = review_codex.review(codex_project_dir(), record["name"], record["git_author"], record["date"], commits, head_note,
                                log, model_stats.note)
     if not body:
         return "", {}

@@ -2,7 +2,8 @@
 
 每次回答跑一次 `codex exec`：聊天消息压成一段提示从 stdin 传进去，始终是只读沙箱。
 不给项目目录时在一个空的临时目录里跑，并告诉它资料都在提示里、不要执行命令；
-给了项目目录（网页聊天）时在项目目录里跑，可以只读地搜代码、看 git 记录和改动。答案从 --json 事件流里取，turn.completed 一到就返回，不等进程慢慢退出。
+给了项目目录（网页聊天）时在项目目录里跑，可以只读地搜代码、看 git 记录和改动。
+code() 是 Code 模式：自检复盘、炸线判断用，直接在网页配的项目目录里跑，提示原样给。答案从 --json 事件流里取，turn.completed 一到就返回，不等进程慢慢退出。
 默认跳过 ~/.codex/config.toml（MCP、插件）和规则文件，每次快好几秒；CODEX_USE_USER_CONFIG=true 时才加载。
 
 配置（系统环境变量 → 项目根目录 .env）：
@@ -214,6 +215,21 @@ def run_turn(prompt: str, images: list, timeout: float, work_dir: str = WORK_DIR
             os.remove(out_file)
         except OSError:
             pass
+
+
+def code(prompt: str, project_dir: str, timeout: float = 0, images: list = (), keep: bool = False,
+         resume_id: str = "", meta: dict = None) -> tuple:
+    """Code 模式（像 Codex 桌面端的 Code）：以项目目录为工作区跑，提示原样给，不套聊天机器人的开场和对话格式。
+    自检复盘、炸线判断用这个；沙箱仍是只读。返回 (回答, usage)。"""
+    if not project_dir or not os.path.isdir(project_dir):
+        raise CodexError(f"项目目录不存在：{project_dir}")
+    timeout = timeout or int_setting("AI_TIMEOUT_SECONDS", 300, 1, 900)
+    with limiter():
+        answer, usage = run_turn(prompt, list(images), timeout, project_dir, keep, resume_id, meta)
+    answer = answer.strip()
+    if not answer:
+        raise CodexError("Codex 返回了空回答")
+    return answer, usage
 
 
 def ask(messages: list, images: list = (), timeout: float = 0, project_dir: str = "", branches: list = (),

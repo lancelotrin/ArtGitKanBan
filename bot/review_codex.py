@@ -1,4 +1,4 @@
-"""自检复盘的 Codex 分析：一个长期的 Codex 会话在 Unity 工程里只读地查代码，按整个工程核对每天的提交。
+"""自检复盘的 Codex 分析：一个长期的 Codex 会话（Code 模式，工作目录是网页配的项目目录）只读地查代码，按整个工程核对每天的提交。
 
 - 复盘前先把工程更新到 origin/main 最新：有本地改动先 stash，不在 main 就切回 main，再快进。
 - 所有人的复盘都在同一个会话里一轮一轮地跑（codex exec resume），前面查清的工程结构后面直接用，省 token。
@@ -27,7 +27,7 @@ NO_ISSUE = "没看出明显问题，修改合理。"
 _lock = threading.Lock()
 
 RULES = (
-    "你是项目组每日「自检复盘」的代码评审员。当前工作目录是 Unity 工程的 git 检出：{root}，已更新到 origin/main 最新。"
+    "你是项目组每日「自检复盘」的代码评审员。当前工作目录是项目目录 {root}（Unity 工程，在 git 仓库里），已更新到 origin/main 最新。"
     "之后每一轮我会给你一个人某天的提交号列表，你在工程里只读地核对这些提交。\n"
     "怎么查：\n"
     "- 用 git show --stat <提交号> 看改了哪些文件，再 git show <提交号> -- <文件> 看需要的 diff；提交可能在别的分支，按提交号查就行。\n"
@@ -119,8 +119,7 @@ def _ask(state: dict, root: str, prompt: str, note=None) -> tuple:
     """在复盘会话里问一轮；没有会话就开新的。返回 (回答, usage)。"""
     meta = {}
     resume_id = state.get("thread_id") or ""
-    with codex_cli.limiter():
-        answer, usage = codex_cli.run_turn(prompt, [], TURN_TIMEOUT, root, keep=True, resume_id=resume_id, meta=meta)
+    answer, usage = codex_cli.code(prompt, root, TURN_TIMEOUT, keep=True, resume_id=resume_id, meta=meta)
     _note_usage(note, usage)
     if not resume_id:
         state.update(thread_id=meta.get("thread_id") or "", turns=0,
