@@ -122,8 +122,10 @@ def messages_to_prompt(messages: list, intro: str = INTRO) -> str:
     return "\n\n".join(parts)
 
 
-def codex_args(out_file: str, images: list, work_dir: str = WORK_DIR, keep: bool = False, resume_id: str = "") -> list:
-    """keep=True 时会话落盘可续用；resume_id 给了就续上那个会话（沿用它当初的工作目录，沙箱仍是只读）。"""
+def codex_args(out_file: str, images: list, work_dir: str = WORK_DIR, keep: bool = False, resume_id: str = "",
+               project_doc: bool = True) -> list:
+    """keep=True 时会话落盘可续用；resume_id 给了就续上那个会话（沿用它当初的工作目录，沙箱仍是只读）。
+    project_doc=False 时不加载工程里的 AGENTS.md（那是给开发用的规则，会引着 Codex 先读一堆文档，每次调用都多带几千 token）。"""
     if resume_id:
         args = [codex_path(), "exec", "resume", "--skip-git-repo-check", "--json", "-o", out_file,
                 "-c", 'sandbox_mode="read-only"']
@@ -136,6 +138,8 @@ def codex_args(out_file: str, images: list, work_dir: str = WORK_DIR, keep: bool
         args += ["--ignore-user-config", "--ignore-rules"]
     if model_name():
         args += ["-m", model_name()]
+    if not project_doc:
+        args += ["-c", "project_doc_max_bytes=0"]
     effort = setting("CODEX_REASONING_EFFORT")
     if effort:
         args += ["-c", f'model_reasoning_effort="{effort}"']
@@ -148,13 +152,13 @@ def codex_args(out_file: str, images: list, work_dir: str = WORK_DIR, keep: bool
 
 
 def run_turn(prompt: str, images: list, timeout: float, work_dir: str = WORK_DIR, keep: bool = False,
-             resume_id: str = "", meta: dict = None) -> tuple:
+             resume_id: str = "", meta: dict = None, project_doc: bool = True) -> tuple:
     """跑一轮，返回 (回答, usage)。回答文件总是写在自己的临时目录，不进项目目录。
     meta 给了就把会话 id 写进 meta["thread_id"]，下次用 resume_id 续上。"""
     os.makedirs(WORK_DIR, exist_ok=True)
     out_file = os.path.join(WORK_DIR, f"answer-{uuid.uuid4().hex}.txt")
     try:
-        proc = subprocess.Popen(codex_args(out_file, images, work_dir, keep, resume_id), cwd=work_dir, stdin=subprocess.PIPE,
+        proc = subprocess.Popen(codex_args(out_file, images, work_dir, keep, resume_id, project_doc), cwd=work_dir, stdin=subprocess.PIPE,
                                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     except OSError as error:
         raise CodexError(f"无法启动 Codex（{codex_path()}）：{error}") from error
@@ -220,12 +224,13 @@ def run_turn(prompt: str, images: list, timeout: float, work_dir: str = WORK_DIR
 def code(prompt: str, project_dir: str, timeout: float = 0, images: list = (), keep: bool = False,
          resume_id: str = "", meta: dict = None) -> tuple:
     """Code 模式（像 Codex 桌面端的 Code）：以项目目录为工作区跑，提示原样给，不套聊天机器人的开场和对话格式。
-    自检复盘、炸线判断用这个；沙箱仍是只读。返回 (回答, usage)。"""
+    自检复盘、炸线判断用这个；沙箱仍是只读，不加载工程的 AGENTS.md。返回 (回答, usage)。
+    注意：续用会话（resume_id）时 usage 是整个会话的累计，不是这一轮的。"""
     if not project_dir or not os.path.isdir(project_dir):
         raise CodexError(f"项目目录不存在：{project_dir}")
     timeout = timeout or int_setting("AI_TIMEOUT_SECONDS", 300, 1, 900)
     with limiter():
-        answer, usage = run_turn(prompt, list(images), timeout, project_dir, keep, resume_id, meta)
+        answer, usage = run_turn(prompt, list(images), timeout, project_dir, keep, resume_id, meta, project_doc=False)
     answer = answer.strip()
     if not answer:
         raise CodexError("Codex 返回了空回答")

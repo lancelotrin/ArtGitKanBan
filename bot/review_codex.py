@@ -3,7 +3,7 @@
 - 复盘前先把工程更新到 origin/main 最新：有本地改动先 stash，不在 main 就切回 main，再快进。
 - 所有人的复盘都在同一个会话里一轮一轮地跑（codex exec resume），前面查清的工程结构后面直接用，省 token。
 - 会话用满 ROTATE_TURNS 轮或超过 ROTATE_DAYS 天就让它把对工程的认识压成笔记，
-  开新会话时带上笔记，记忆不丢、上下文不会无限长（usage 里的 input_tokens 是一轮里所有调用的累计，不能拿来判断会话长度）。会话 id 和笔记存在 data/review_codex.json。
+  开新会话时带上笔记，记忆不丢、上下文不会无限长。续用会话时 Codex 给的 usage 是整个会话的累计，这里减掉上一轮的累计得到本轮用量。会话 id 和笔记存在 data/review_codex.json。
 提示里不贴 diff，只给提交号，Codex 自己 git show / rg，需要多少看多少。
 """
 import datetime
@@ -17,7 +17,7 @@ from common import codex_cli
 from common.paths import DATA_DIR
 
 STATE_PATH = os.path.join(DATA_DIR, "review_codex.json")
-ROTATE_TURNS = 15
+ROTATE_TURNS = 4  # 每轮的命令都要带上整个会话的上下文，会话越长越费；几轮就换新，靠笔记延续
 ROTATE_DAYS = 3
 MEMORY_MAX_CHARS = 3000
 TURN_TIMEOUT = 900
@@ -33,7 +33,9 @@ RULES = (
     "- 用 git show --stat <提交号> 看改了哪些文件，再 git show <提交号> -- <文件> 看需要的 diff；提交可能在别的分支，按提交号查就行。\n"
     "- 改动涉及的类、字段、属性、宏、keyword、配置键、数据源，用 rg 在整个工程里查其他引用和调用方，"
     "核对是否都同步改了、有没有漏改、改动后的数据流是否一致。\n"
-    "- 省 token：不要整文件输出，看 rg 命中附近几十行即可；diff 很大时按文件分段看；"
+    "- 省 token：每条命令的输出控制在 200 行、8000 字符以内（用 --stat、-- <文件>、rg -m、head、sed -n 截取）；"
+    "不要整文件输出，看 rg 命中附近几十行即可；diff 很大时按文件分段看；"
+    "prefab / asset / meta / unity 这类序列化文件不要整段看 diff，只 rg 相关字段或 guid；不要去读工程里的说明文档（Assets/MD~ 等）；"
     "这个会话里已经弄清楚的工程结构、模块位置直接用，不要重复查。\n"
     "- 只读：不要修改、新建、删除文件，不要 fetch / pull / checkout / reset / stash / commit 等任何 git 写操作，不要联网，不要构建或跑测试。\n"
     "输出（只输出下面的内容，不要开场白和思考过程）：\n"
@@ -110,6 +112,22 @@ def update_to_main(root: str) -> tuple:
     return True, "；".join(notes)
 
 
+USAGE_KEYS = ("input_tokens", "cached_input_tokens", "output_tokens", "reasoning_output_tokens")
+
+
+def _turn_usage(state: dict, total: dict, resumed: bool) -> dict:
+    """续用会话时 usage 是会话累计，减掉上一轮的累计得到本轮的；新会话直接就是本轮的。"""
+    before = state.get("session_usage") or {}
+    legacy = state.pop("last_input_tokens", 0)  # 旧版本只记了累计输入
+    if resumed and not before and legacy:
+        before = {"input_tokens": legacy}
+    if not resumed:
+        before = {}
+    turn = {key: max(0, int(total.get(key) or 0) - int(before.get(key) or 0)) for key in USAGE_KEYS}
+    state["session_usage"] = {key: int(total.get(key) or 0) for key in USAGE_KEYS}
+    return turn
+
+
 def _note_usage(note, usage: dict, ok: bool = True, error: str = "") -> None:
     if note:
         note(codex_cli.label(), ok, error, int(usage.get("input_tokens") or 0), int(usage.get("output_tokens") or 0))
@@ -119,13 +137,13 @@ def _ask(state: dict, root: str, prompt: str, note=None) -> tuple:
     """在复盘会话里问一轮；没有会话就开新的。返回 (回答, usage)。"""
     meta = {}
     resume_id = state.get("thread_id") or ""
-    answer, usage = codex_cli.code(prompt, root, TURN_TIMEOUT, keep=True, resume_id=resume_id, meta=meta)
+    answer, total = codex_cli.code(prompt, root, TURN_TIMEOUT, keep=True, resume_id=resume_id, meta=meta)
+    usage = _turn_usage(state, total, bool(resume_id))
     _note_usage(note, usage)
     if not resume_id:
         state.update(thread_id=meta.get("thread_id") or "", turns=0,
                      started_at=datetime.datetime.now().isoformat(timespec="seconds"))
     state["turns"] = int(state.get("turns") or 0) + 1
-    state["last_input_tokens"] = int(usage.get("input_tokens") or 0)
     state["root"] = root
     return answer.strip(), usage
 
