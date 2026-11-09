@@ -6,29 +6,33 @@ try { $('#reviewer').value = localStorage.getItem('portable-merge-review-name') 
 const escape = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function reviewer() { return $('#reviewer').value.trim(); }
 function votesFor(id) { return state.votes.filter(v => v.file_id === id); }
+// 合入分支无同路径历史：没人选时默认用当前分支（与生成计划、导出 CSV 一致）
+const defaultChoice = (f) => f.theirs ? null : 'ours';
+function choiceOf(f) { return votesFor(f.id)[0]?.choice || defaultChoice(f); }
 function notify(message) { $('#toast').textContent = message; $('#toast').hidden = false; clearTimeout(notify.timer); notify.timer = setTimeout(() => $('#toast').hidden = true, 3500); }
 function branch(c, name) { return `<div class="branch"><div class="branch-name">${name}</div>${c ? `<div class="commit"><span class="sha">${escape(c.sha.slice(0,11))}</span> · ${escape(c.author)}</div><div class="commit">${escape(c.subject)}</div><div class="meta">${escape(c.at)}${c.committer !== c.author ? ' · 提交人 '+escape(c.committer) : ''}</div>` : `<div class="meta">该分支无同路径历史，需核对删除或重命名${name===escape(labels.theirs)?'；未选择时默认用'+escape(labels.ours):''}</div>`}</div>`; }
 function render() {
   if (!state) return;
-  const files = state.snapshot.files, reviewed = files.filter(f => votesFor(f.id).length);
+  const files = state.snapshot.files, reviewed = files.filter(f => choiceOf(f));
   const mine = state.votes.filter(v => v.reviewer === reviewer());
-  $('#stats').innerHTML = [[files.length,'冲突文件'],[reviewed.length,'已选择'],[files.length-reviewed.length,'尚未选择'],[state.votes.filter(v => v.choice === 'both').length,'两边都要'],[mine.length,'我最后修改']].map(([n,t]) => `<div class="stat"><strong>${n}</strong><span>${t}</span></div>`).join('');
+  $('#stats').innerHTML = [[files.length,'冲突文件'],[reviewed.length,'已选择'],[files.length-reviewed.length,'尚未选择'],[files.filter(f => choiceOf(f) === 'both').length,'两边都要'],[mine.length,'我最后修改']].map(([n,t]) => `<div class="stat"><strong>${n}</strong><span>${t}</span></div>`).join('');
   const query = $('#search').value.toLowerCase(), category = $('#category').value, status = $('#status').value;
   const visible = files.filter(f => {
     const votes = votesFor(f.id), own = votes.some(v => v.reviewer === reviewer());
     if (category && f.category !== category) return false;
-    if (status === 'pending' && votes.length || status === 'reviewed' && !votes.length || status === 'mine' && !own) return false;
+    const picked = !!choiceOf(f);
+    if (status === 'pending' && picked || status === 'reviewed' && !picked || status === 'mine' && !own) return false;
     return !query || `${f.path} ${JSON.stringify(f.ours_history)} ${JSON.stringify(f.theirs_history)}`.toLowerCase().includes(query);
   }).sort((a,b) => {
-    const pending = Number(!!votesFor(a.id).length) - Number(!!votesFor(b.id).length);
+    const pending = Number(!!choiceOf(a)) - Number(!!choiceOf(b));
     const folder = p => p.includes('/') ? p.slice(0,p.lastIndexOf('/')) : '';
     return pending || folder(a.path).localeCompare(folder(b.path),'zh-CN',{numeric:true}) || a.path.localeCompare(b.path,'zh-CN',{numeric:true});
   });
   $('#count').textContent = `显示 ${visible.length} / ${files.length} 个文件`;
   $('#files').innerHTML = visible.map(f => {
-    const votes = votesFor(f.id), own = votes[0];
-    const badge = own ? labels[own.choice] : (f.theirs ? '尚未选择' : '尚未选择（默认'+labels.ours+'）');
-    return `<article class="card" data-id="${f.id}"><div class="card-top"><span class="number">${String(f.number).padStart(3,'0')}</span><div class="heading"><div class="filename">${escape(f.path.split('/').pop())}</div><div class="path">${escape(f.path)}</div><span class="badge">${escape(f.category)}</span></div><span class="badge ${votes.length?'good':''}">${escape(badge)}</span></div><div class="columns">${branch(f.ours,escape(labels.ours))}${branch(f.theirs,escape(labels.theirs))}</div><p class="advice">${escape(f.advice)}</p><div class="decision"><div class="vote-row">${Object.entries(labels).map(([key,label])=>`<button class="choice ${own?.choice===key?'active':''}" data-choice="${key}" aria-pressed="${own?.choice===key}">${escape(label)}</button>`).join('')}<input class="note" maxlength="2000" aria-label="选择备注" placeholder="备注（选填），输入后点击分支按钮保存" value="${escape(drafts.has(f.id)?drafts.get(f.id):own?.comment||'')}"><button class="clear" data-choice="clear">清除当前选择</button></div><div class="votes">${votes.length?votes.map(v=>`<span class="vote" title="${escape(new Date(v.updated_at).toLocaleString())}">最后修改：${escape(v.reviewer)} → ${escape(labels[v.choice])}${v.comment?' · '+escape(v.comment):''} · ${escape(new Date(v.updated_at).toLocaleString())}</span>`).join(''):'尚未选择，等待相关同事确认。'}</div></div><details ${expanded.has(f.id)?'open':''}><summary>查看双方文件差异${f.binary?'（二进制）':''}</summary><pre>${escape(f.diff || '无可显示的文本差异，请结合对应资源和提交确认。')}</pre></details></article>`;
+    const votes = votesFor(f.id), own = votes[0], current = choiceOf(f);
+    const badge = own ? labels[own.choice] : current ? labels[current]+'（默认）' : '尚未选择';
+    return `<article class="card" data-id="${f.id}"><div class="card-top"><span class="number">${String(f.number).padStart(3,'0')}</span><div class="heading"><div class="filename">${escape(f.path.split('/').pop())}</div><div class="path">${escape(f.path)}</div><span class="badge">${escape(f.category)}</span></div><span class="badge ${current?'good':''}">${escape(badge)}</span></div><div class="columns">${branch(f.ours,escape(labels.ours))}${branch(f.theirs,escape(labels.theirs))}</div><p class="advice">${escape(f.advice)}</p><div class="decision"><div class="vote-row">${Object.entries(labels).map(([key,label])=>`<button class="choice ${current===key?'active':''}" data-choice="${key}" aria-pressed="${current===key}">${escape(label)}</button>`).join('')}<input class="note" maxlength="2000" aria-label="选择备注" placeholder="备注（选填），输入后点击分支按钮保存" value="${escape(drafts.has(f.id)?drafts.get(f.id):own?.comment||'')}"><button class="clear" data-choice="clear">清除当前选择</button></div><div class="votes">${votes.length?votes.map(v=>`<span class="vote" title="${escape(new Date(v.updated_at).toLocaleString())}">最后修改：${escape(v.reviewer)} → ${escape(labels[v.choice])}${v.comment?' · '+escape(v.comment):''} · ${escape(new Date(v.updated_at).toLocaleString())}</span>`).join(''):current?'合入分支无同路径历史，默认选择'+escape(labels.ours)+'，尚未有人修改。':'尚未选择，等待相关同事确认。'}</div></div><details ${expanded.has(f.id)?'open':''}><summary>查看双方文件差异${f.binary?'（二进制）':''}</summary><pre>${escape(f.diff || '无可显示的文本差异，请结合对应资源和提交确认。')}</pre></details></article>`;
   }).join('') || '<div class="empty">没有符合筛选条件的文件</div>';
   document.querySelectorAll('details').forEach(d=>d.addEventListener('toggle',()=>{const id=d.closest('.card').dataset.id;d.open?expanded.add(id):expanded.delete(id);}));
 }
