@@ -4382,7 +4382,7 @@ COMMIT_SUMMARY_PROMPT = (
 
 _COMMIT_REPORT_PATTERN = re.compile(r"报告|影响|隐患|风险|提升|意见|建议|评审|自检|review", re.IGNORECASE)
 _REPORT_DIFF_SUFFIX = (".cs", ".shader", ".hlsl", ".cginc", ".compute", ".py", ".lua", ".json", ".bat", ".ps1", ".md", ".asset")
-_REPORT_DIFF_PER_FILE = 3000
+_REPORT_DIFF_PER_FILE = 9000
 _REPORT_DIFF_PER_COMMIT = 9000
 _REPORT_MAX_COMMITS = 10
 COMMIT_FACTS_PROMPT = (
