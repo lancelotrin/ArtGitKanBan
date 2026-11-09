@@ -3635,8 +3635,16 @@ def review_day_bounds(day: datetime.date) -> tuple:
     return start.isoformat(timespec="seconds"), (start + datetime.timedelta(days=1)).isoformat(timespec="seconds")
 
 
+REVIEW_SKIP_SUBJECTS = {"auto update output", "auto sync svc from devops"}
+
+
+def is_review_skip_subject(subject: str) -> bool:
+    """机器自动生成的提交（打包输出、DevOps 同步）不进复盘。"""
+    return " ".join((subject or "").split()).lower() in REVIEW_SKIP_SUBJECTS
+
+
 def review_day_commits(author: str, day: datetime.date) -> list:
-    """返回 [(hash, branch, line)]，两条分支去重，不含合并提交。"""
+    """返回 [(hash, branch, line)]，两条分支去重，不含合并提交和自动提交。"""
     git_root = get_git_root()
     since, until = review_day_bounds(day)
     rows = []
@@ -3648,6 +3656,8 @@ def review_day_commits(author: str, day: datetime.date) -> list:
         ])
         for line in (out.splitlines() if ok else []):
             short = line.split("|", 1)[0]
+            if is_review_skip_subject(line.split("|", 3)[-1]):
+                continue
             if line.strip() and short not in seen:
                 seen.add(short)
                 rows.append((short, branch, line))
@@ -3695,6 +3705,19 @@ def review_brief(report: str, commit_count: int, outgoing: str, incoming: str) -
     return "，".join(parts) + "。"
 
 
+def review_needs_notice(record: dict) -> bool:
+    """有提交且看出问题（报告不是「没看出明显问题」、炸线、生成失败）才发私聊和群。"""
+    status = record.get("status")
+    if status == "failed":
+        return True
+    if status != "ok":
+        return False
+    if record.get("bomb_out_md") or record.get("bomb_in_md"):
+        return True
+    report = record.get("report_md") or ""
+    return bool(record.get("commits")) and bool(report) and "没看出明显问题" not in report
+
+
 REVIEW_DEFAULT_GROUPS = ("oc_d7aa3ebf93e3bf0dc5a1b4b6c3459737",)
 
 
@@ -3718,11 +3741,13 @@ def control_review_groups(text: str) -> dict:
 
 
 def review_group_text(day_text: str, records: list, base: str) -> str:
+    """只列有问题的人；没问题和没提交的不点名。"""
     active = [record for record in records if record.get("status") != "empty"]
-    idle = [str(record.get("name")) for record in records if record.get("status") == "empty"]
+    flagged = [record for record in active if review_needs_notice(record)]
     total = sum(len(record.get("commits") or []) for record in active)
-    lines = [f"{len(records)} 人里 {len(active)} 人有提交，共 {total} 条。[看当天全部]({base}/?d={day_text})"]
-    for record in active:
+    lines = [f"{len(records)} 人里 {len(active)} 人有提交，共 {total} 条，{len(flagged)} 人有需要留意的地方。"
+             f"[看当天全部]({base}/?d={day_text})"]
+    for record in flagged:
         link = f"{base}/r/{day_text}/{review_file_name(record['git_author'])}"
         if record.get("status") == "failed":
             brief = "复盘生成失败，网页上有说明。"
@@ -3730,8 +3755,6 @@ def review_group_text(day_text: str, records: list, base: str) -> str:
             brief = review_brief(record.get("report_md", ""), len(record.get("commits") or []),
                                  record.get("bomb_out_md", ""), record.get("bomb_in_md", ""))
         lines.append(f"**{record.get('name')}**：{brief}[详情]({link})")
-    if idle:
-        lines.append("当天没提交：" + "、".join(idle))
     lines.append("内容来自真实 diff。")
     return "\n".join(lines)
 
@@ -3752,6 +3775,7 @@ def answer_review_info() -> str:
         "每天 0 点（北京时间）复盘名单里每个人**前一天**在 main 和 CBT2_bugfix 上的提交，按真实 diff 写改动、影响和隐患。",
         f"- 结果网页：[{base}]({base})，可以按日期看所有人",
         f"- 汇总发到 {len(groups)} 个群" if groups else "- 现在不发群",
+        "- 只有看出问题（需要留意、炸线、生成失败）才私聊和发群，没提交或没问题不打扰；「Auto update output」「Auto sync svc from devops」这类自动提交不算",
         f"- 名单：{names}。要加人找朱辉在后台登记（git 作者名要和提交里一致）",
         "想现在就看某人的提交自检，说「zhuhui 最近 10 条提交 自检」。",
     ]
@@ -3925,7 +3949,7 @@ def generate_daily_reviews(day: datetime.date, notify: bool = True) -> str:
             record["status"] = "failed"
             record["error"] = str(error)[:200]
         save_review_json(os.path.join(REVIEW_DIR, record["date"], review_file_name(author) + ".json"), record)
-        if notify and sub.get("dm") and sub.get("open_id") and record["status"] in ("ok", "failed"):
+        if notify and sub.get("dm") and sub.get("open_id") and review_needs_notice(record):
             link = f"{base}/r/{record['date']}/{review_file_name(author)}"
             brief = "复盘生成失败，网页上有说明。" if record["status"] == "failed" else review_brief(
                 record.get("report_md", ""), len(record.get("commits") or []), record.get("bomb_out_md", ""), record.get("bomb_in_md", ""))
@@ -3935,7 +3959,9 @@ def generate_daily_reviews(day: datetime.date, notify: bool = True) -> str:
     clean_old_reviews()
     group_note = ""
     groups = review_groups() if notify else []
-    if groups:
+    if groups and not any(review_needs_notice(record) for record in records):
+        group_note = "；没看出问题，不发群"
+    elif groups:
         day_text = f"{day:%Y-%m-%d}"
         stamp = datetime.datetime.now(BEIJING_TZ).strftime("%H%M")
         sent = send_groups(groups, review_group_text(day_text, records, base), f"review-g-{day_text}-{stamp}", f"{day_text} 自检复盘")

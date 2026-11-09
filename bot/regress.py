@@ -602,6 +602,21 @@ def run_memory() -> int:
         and "没法总结视频内容" in bot.bilibili_no_subtitle_text("t", "u", {"duration": 422}, "简介", "L")
         and "7 分 02 秒" in bot.bilibili_no_subtitle_text("t", "u", {"duration": 422}, "简介", "L")
         and bot.review_answer("今天加班到十点好累", "早点睡", allow_short=True) == ""
+        and bot.is_review_skip_subject("Auto update output")
+        and bot.is_review_skip_subject(" auto sync svc  from devops ")
+        and not bot.is_review_skip_subject("【Shader】Auto update output 修复")
+        and not bot.review_needs_notice({"status": "empty"})
+        and not bot.review_needs_notice({"status": "ok", "commits": [1], "report_md": "x\n没看出明显问题，修改合理。"})
+        and bot.review_needs_notice({"status": "ok", "commits": [1], "report_md": "**需要留意**\n- a"})
+        and bot.review_needs_notice({"status": "ok", "commits": [], "bomb_in_md": "丢了"})
+        and bot.review_needs_notice({"status": "failed"})
+        and "**甲**" in bot.review_group_text("2026-11-08", [
+            {"name": "甲", "git_author": "a", "status": "ok", "commits": [1], "report_md": "**需要留意**"},
+            {"name": "乙", "git_author": "b", "status": "ok", "commits": [1], "report_md": "没看出明显问题"},
+            {"name": "丙", "git_author": "c", "status": "empty"}], "http://x")
+        and "乙" not in bot.review_group_text("2026-11-08", [
+            {"name": "乙", "git_author": "b", "status": "ok", "commits": [1], "report_md": "没看出明显问题"},
+            {"name": "丙", "git_author": "c", "status": "empty"}], "http://x")
         and bool(bot._COMMIT_REPORT_PATTERN.search("zhuhui 今天的提交 自检"))
         and bot.format_author_commits("zhuhui", "今天（2026-11-03）", "origin/main", "")
         == "今天（2026-11-03）在 `origin/main` 上没有 zhuhui 的提交。"
