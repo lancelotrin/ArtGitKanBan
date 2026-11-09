@@ -604,7 +604,9 @@ def run_memory() -> int:
         and bot.review_answer("今天加班到十点好累", "早点睡", allow_short=True) == ""
         and bot.is_review_skip_subject("Auto update output")
         and bot.is_review_skip_subject(" auto sync svc  from devops ")
-        and not bot.is_review_skip_subject("【Shader】Auto update output 修复")
+        and bot.is_review_skip_subject("【Shader】Auto update output 修复")
+        and bot.is_review_skip_subject("Merge: Auto Sync SVC from DevOps #12")
+        and not bot.is_review_skip_subject("【Shader】Uber寄存器合并")
         and not bot.review_needs_notice({"status": "empty"})
         and not bot.review_needs_notice({"status": "ok", "commits": [1], "report_md": "x\n没看出明显问题，修改合理。"})
         and bot.review_needs_notice({"status": "ok", "commits": [1], "report_md": "**需要留意**\n- a"})
