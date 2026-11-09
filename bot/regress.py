@@ -602,6 +602,13 @@ def run_memory() -> int:
         and "没法总结视频内容" in bot.bilibili_no_subtitle_text("t", "u", {"duration": 422}, "简介", "L")
         and "7 分 02 秒" in bot.bilibili_no_subtitle_text("t", "u", {"duration": 422}, "简介", "L")
         and bot.review_answer("今天加班到十点好累", "早点睡", allow_short=True) == ""
+        and bot.review_codex.valid_report("**【abc1234】** x\n没看出明显问题，修改合理。", ["abc1234"])
+        and not bot.review_codex.valid_report("**【zzz】** x\n没看出明显问题", ["abc1234"])
+        and not bot.review_codex.valid_report("**【abc1234】** 只有要点", ["abc1234"])
+        and bot.codex_cli.codex_args("o", [], "/w", resume_id="t1")[2] == "resume"
+        and bot.codex_cli.codex_args("o", [], "/w", resume_id="t1")[-2:] == ["t1", "-"]
+        and "--ephemeral" in bot.codex_cli.codex_args("o", [], "/w")
+        and "--ephemeral" not in bot.codex_cli.codex_args("o", [], "/w", keep=True)
         and bot.is_review_skip_subject("Auto update output")
         and bot.is_review_skip_subject(" auto sync svc  from devops ")
         and bot.is_review_skip_subject("【Shader】Auto update output 修复")

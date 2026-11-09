@@ -32,6 +32,7 @@ from bot import doc_watch
 from boards import bomb_board
 from common import codex_cli
 from bot import local_edit
+from bot import review_codex
 from common import model_stats
 from bot import stickers
 from common.paths import DATA_DIR, ROOT_DIR, migrate_legacy_data
@@ -3918,6 +3919,11 @@ def generate_daily_reviews(day: datetime.date, notify: bool = True) -> str:
     git_root = get_git_root()
     for branch in GIT_BRANCHES:
         fetch_origin_branch(git_root, branch)
+    use_codex = USE_CODEX and any(review_day_commits(sub["git_author"], day) for sub in subs)
+    head_note = ""
+    if use_codex:
+        _updated, head_note = review_codex.update_to_main(git_root)
+        log(f"[review] 工程更新：{head_note}")
     since, _until = review_day_bounds(day)
     day_key = f"{day:%m-%d}"
     day_merges = []
@@ -3934,7 +3940,9 @@ def generate_daily_reviews(day: datetime.date, notify: bool = True) -> str:
         try:
             commits = review_day_commits(author, day)
             outgoing, incoming = review_bomb_sections(author, day_merges)
-            report, diffs = commit_report(git_root, "\n".join(line for _short, _branch, line in commits)) if commits else ("", {})
+            report, diffs = review_report(git_root, record, commits, head_note) if use_codex and commits else ("", {})
+            if commits and not report:
+                report, diffs = commit_report(git_root, "\n".join(line for _short, _branch, line in commits))
             record["commits"] = [
                 {"hash": short, "branch": branch, "line": line, "diff": redact(diffs.get(short, ""))}
                 for short, branch, line in commits
@@ -3968,6 +3976,23 @@ def generate_daily_reviews(day: datetime.date, notify: bool = True) -> str:
         sent = send_groups(groups, review_group_text(day_text, records, base), f"review-g-{day_text}-{stamp}", f"{day_text} 自检复盘")
         group_note = f"；发群 {sent}/{len(groups)}"
     return f"{day:%Y-%m-%d} 复盘完成：" + "，".join(done) + group_note
+
+
+def review_report(git_root: str, record: dict, commits: list, head_note: str) -> tuple:
+    """Codex 在工程里按整个工程核对。返回 (报告, {提交号: 裁剪 diff})；失败返回空报告，调用方退回逐条模型分析。"""
+    body = review_codex.review(git_root, record["name"], record["git_author"], record["date"], commits, head_note,
+                               log, model_stats.note)
+    if not body:
+        return "", {}
+    diffs = {}
+    for short, _branch, _line in commits:
+        ok, diff = run_git_readonly(git_root, ["show", "--format=", "--unified=3", short])
+        diffs[short] = _report_diff_text(diff if ok else "")
+    rows = [tuple(line.split("|", 3)[i] for i in (0, 2, 3)) for _short, _branch, line in commits]
+    shown = min(len(commits), review_codex.MAX_COMMITS)
+    extra = f"\n只看了前 {shown} 条。" if len(commits) > shown else ""
+    head = f"**分析报告**（Codex 在工程里按整个工程核对）\n{commit_overview(rows, 0)}{extra}"
+    return f"{head}\n\n{body}", diffs
 
 
 def send_review_dm(open_id: str, title: str, text: str, key: str) -> bool:

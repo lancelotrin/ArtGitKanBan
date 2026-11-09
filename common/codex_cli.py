@@ -121,9 +121,16 @@ def messages_to_prompt(messages: list, intro: str = INTRO) -> str:
     return "\n\n".join(parts)
 
 
-def codex_args(out_file: str, images: list, work_dir: str = WORK_DIR) -> list:
-    args = [codex_path(), "exec", "--skip-git-repo-check", "--sandbox", "read-only", "--color", "never",
-            "--ephemeral", "--json", "-C", work_dir, "-o", out_file]
+def codex_args(out_file: str, images: list, work_dir: str = WORK_DIR, keep: bool = False, resume_id: str = "") -> list:
+    """keep=True 时会话落盘可续用；resume_id 给了就续上那个会话（沿用它当初的工作目录，沙箱仍是只读）。"""
+    if resume_id:
+        args = [codex_path(), "exec", "resume", "--skip-git-repo-check", "--json", "-o", out_file,
+                "-c", 'sandbox_mode="read-only"']
+    else:
+        args = [codex_path(), "exec", "--skip-git-repo-check", "--sandbox", "read-only", "--color", "never",
+                "--json", "-C", work_dir, "-o", out_file]
+        if not keep:
+            args.append("--ephemeral")
     if setting("CODEX_USE_USER_CONFIG").lower() not in ("1", "true", "yes"):
         args += ["--ignore-user-config", "--ignore-rules"]
     if model_name():
@@ -133,15 +140,20 @@ def codex_args(out_file: str, images: list, work_dir: str = WORK_DIR) -> list:
         args += ["-c", f'model_reasoning_effort="{effort}"']
     for image in images:
         args += ["-i", image]
+    if resume_id:
+        args.append(resume_id)
     args.append("-")
     return args
 
 
-def run_turn(prompt: str, images: list, timeout: float, work_dir: str = WORK_DIR) -> tuple:
-    """跑一轮，返回 (回答, usage)。回答文件总是写在自己的临时目录，不进项目目录。"""
+def run_turn(prompt: str, images: list, timeout: float, work_dir: str = WORK_DIR, keep: bool = False,
+             resume_id: str = "", meta: dict = None) -> tuple:
+    """跑一轮，返回 (回答, usage)。回答文件总是写在自己的临时目录，不进项目目录。
+    meta 给了就把会话 id 写进 meta["thread_id"]，下次用 resume_id 续上。"""
+    os.makedirs(WORK_DIR, exist_ok=True)
     out_file = os.path.join(WORK_DIR, f"answer-{uuid.uuid4().hex}.txt")
     try:
-        proc = subprocess.Popen(codex_args(out_file, images, work_dir), cwd=work_dir, stdin=subprocess.PIPE,
+        proc = subprocess.Popen(codex_args(out_file, images, work_dir, keep, resume_id), cwd=work_dir, stdin=subprocess.PIPE,
                                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     except OSError as error:
         raise CodexError(f"无法启动 Codex（{codex_path()}）：{error}") from error
@@ -168,7 +180,9 @@ def run_turn(prompt: str, images: list, timeout: float, work_dir: str = WORK_DIR
                 continue
             kind = event.get("type")
             item = event.get("item") or {}
-            if kind == "item.completed" and item.get("type") == "agent_message" and item.get("text"):
+            if kind == "thread.started" and meta is not None:
+                meta["thread_id"] = event.get("thread_id") or ""
+            elif kind == "item.completed" and item.get("type") == "agent_message" and item.get("text"):
                 answer = item["text"]
             elif kind in ("error", "turn.failed"):
                 failure = event.get("message") or (event.get("error") or {}).get("message") or failure
