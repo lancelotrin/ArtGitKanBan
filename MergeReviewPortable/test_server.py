@@ -40,6 +40,38 @@ class ReviewTests(unittest.TestCase):
         with urlopen(self.url + "/api/state") as response:
             return json.load(response)
 
+    def test_prefs_shared_across_sessions(self):
+        root = Path(self.temp.name) / "sessions"
+        servers = []
+        for name in ("s1", "s2"):
+            (root / name).mkdir(parents=True)
+            db = root / name / "reviews.sqlite3"
+            initialize_database(db)
+            server = ReviewServer(("127.0.0.1", 0), make_handler(self.snapshot, db))
+            threading.Thread(target=server.serve_forever, daemon=True).start()
+            servers.append(server)
+        try:
+            one, two = (f"http://127.0.0.1:{s.server_port}" for s in servers)
+            with urlopen(two + "/api/prefs") as response:
+                self.assertEqual(json.load(response)["name"], "")
+            post = lambda url, body: urlopen(Request(url + "/api/prefs", data=json.dumps(body).encode(),
+                                                     headers={"Content-Type": "application/json"}))
+            post(one, {"name": " chenlong ", "search": "Assets/UI"}).close()
+            with urlopen(two + "/api/prefs") as response:
+                prefs = json.load(response)
+            self.assertEqual((prefs["name"], prefs["search"]), ("chenlong", "Assets/UI"))
+            post(two, {"search": ""}).close()  # 只改搜索，姓名保留
+            with urlopen(one + "/api/prefs") as response:
+                prefs = json.load(response)
+            self.assertEqual((prefs["name"], prefs["search"]), ("chenlong", ""))
+            self.assertTrue((root / "reviewer-prefs.json").is_file())
+            with self.assertRaises(HTTPError):
+                post(one, {"name": "x" * 61})
+        finally:
+            for server in servers:
+                server.shutdown()
+                server.server_close()
+
     def test_latest_person_overwrites_shared_choice_and_clear(self):
         self.vote()
         self.vote("Bob", "both")

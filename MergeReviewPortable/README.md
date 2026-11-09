@@ -13,6 +13,7 @@ Merge Review Portable — 局域网合并冲突确认与处理
    不指定时使用 Git 冲突索引的 base。工具不会猜测每日同步提交。
 3. python merge_review.py serve --session "会话目录" --host 0.0.0.0 --port 8767
    用该主机的局域网 IP:8767 访问；页面内填写姓名并选择，导出 CSV。
+   姓名和搜索词保存在 sessions/reviewer-prefs.json，所有会话共用；挂在大豆后台按登录名区分，单独运行按访问机器 IP 区分。
    CSV 中 both / 未选择的行只留 base（当前分支基底）、replay_from..replay_to 和要重放的
    replay_commits（触及该文件的合入分支提交），可直接交给新 AI 会话重放。
    Windows 可用 Start.ps1 -RepoPath "仓库" 或 -SessionPath "会话目录" 后台启动。

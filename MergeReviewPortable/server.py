@@ -3,7 +3,9 @@ import argparse
 import csv
 import io
 import json
+import os
 import sqlite3
+import threading
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -22,6 +24,37 @@ def login_name(handler) -> str:
     """挂在大豆后台下时由后台认过人（auth_user），以登录名为准；单独运行时返回空。"""
     user = getattr(handler, "auth_user", None) or {}
     return str(user.get("name") or "")[:60]
+
+PREFS_LOCK = threading.Lock()
+
+
+def prefs_key(handler) -> str:
+    """个人设置按谁存：大豆后台登录了按登录名，单独运行时按访问机器的 IP。"""
+    login = login_name(handler)
+    return ("login:" + login) if login else ("ip:" + str(handler.client_address[0]))
+
+
+def read_prefs(path) -> dict:
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def write_prefs(path, key, values) -> dict:
+    """姓名 / 搜索词存在会话根目录的共享文件里，所有会话读同一份，改了全部会话同步。"""
+    with PREFS_LOCK:
+        data = read_prefs(path)
+        entry = dict(data.get(key) or {})
+        entry.update(values)
+        entry["updated_at"] = datetime.now(timezone.utc).isoformat()
+        data[key] = entry
+        tmp = Path(path).with_suffix(".tmp")
+        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(tmp, path)
+    return entry
+
 
 def database(path):
     conn = sqlite3.connect(path, timeout=15)
@@ -50,6 +83,7 @@ def initialize_database(path):
 
 def make_handler(snapshot, db_path):
     ids = {f["id"] for f in snapshot["files"]}
+    prefs_path = Path(db_path).parent.parent / "reviewer-prefs.json"  # 会话根目录，所有会话共用
 
     class Handler(BaseHTTPRequestHandler):
         def reply(self, status, body, mime="application/json; charset=utf-8", headers=None):
@@ -81,6 +115,10 @@ def make_handler(snapshot, db_path):
                 return self.reply(200, {"snapshot": snapshot, "votes": self.votes()})
             if route == "/api/votes":
                 return self.reply(200, {"snapshot_id": snapshot["id"], "votes": self.votes()})
+            if route == "/api/prefs":
+                entry = read_prefs(prefs_path).get(prefs_key(self)) or {}
+                return self.reply(200, {"name": login_name(self) or entry.get("name", ""),
+                                        "search": entry.get("search", ""), "login": bool(login_name(self))})
             if route == "/api/review.md":
                 report = Path(db_path).parent / 'review.md'
                 if report.is_file():
@@ -130,6 +168,8 @@ def make_handler(snapshot, db_path):
             return self.reply(404, {"error": "页面不存在"})
 
         def do_POST(self):
+            if urlsplit(self.path).path == "/api/prefs":
+                return self.save_prefs()
             if urlsplit(self.path).path != "/api/vote":
                 return self.reply(404, {"error": "接口不存在"})
             try:
@@ -177,6 +217,34 @@ def make_handler(snapshot, db_path):
             finally:
                 conn.close()
             self.reply(200, {"ok": True})
+
+        def save_prefs(self):
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                if not 0 < length <= 4096:
+                    raise ValueError("请求大小无效")
+                origin = self.headers.get("Origin")
+                if origin and urlsplit(origin).netloc != self.headers.get("Host"):
+                    return self.reply(403, {"error": "不接受跨站提交"})
+                body = json.loads(self.rfile.read(length))
+                if not isinstance(body, dict):
+                    raise ValueError("请求格式无效")
+                values = {}
+                for field, limit in (("name", 60), ("search", 200)):
+                    if field in body:
+                        value = body[field]
+                        if not isinstance(value, str) or len(value.strip()) > limit:
+                            raise ValueError(f"{field} 必须是不超过 {limit} 字的文本")
+                        values[field] = value.strip()
+                if not values:
+                    raise ValueError("没有要保存的内容")
+            except (ValueError, TypeError, UnicodeError) as exc:
+                return self.reply(400, {"error": str(exc)})
+            try:
+                entry = write_prefs(prefs_path, prefs_key(self), values)
+            except OSError:
+                return self.reply(503, {"error": "保存个人设置失败，请重试"})
+            self.reply(200, {"ok": True, "name": entry.get("name", ""), "search": entry.get("search", "")})
 
     return Handler
 

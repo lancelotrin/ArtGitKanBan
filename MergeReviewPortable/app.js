@@ -62,7 +62,37 @@ $('#files').addEventListener('click',async e=>{
     drafts.delete(id);notify(button.dataset.choice==='clear'?'已清除当前选择':'已保存为最新选择，所有人可见');
   } catch(e){notify(e.message);} finally{busy=false;await load();card.querySelectorAll('button').forEach(b=>b.disabled=false);}
 });
-$('#reviewer').addEventListener('change',()=>{try{localStorage.setItem('portable-merge-review-name',reviewer());}catch{}drafts.clear();render();});
-['search','category','status'].forEach(id=>$('#'+id).addEventListener(id==='search'?'input':'change',render));
-$('#refresh').addEventListener('click',load);load();setInterval(load,10000);
+// 姓名、搜索词存在服务端（所有会话共用一份），打开任一会话都带上；别的会话里改了，这里也跟着同步。
+const prefFields = {name: '#reviewer', search: '#search'}, synced = {}, pendingPrefs = {};
+async function loadPrefs() {
+  try {
+    const response = await fetch('api/prefs'); if (!response.ok) return;
+    const prefs = await response.json(); let changed = false;
+    if (prefs.login) $('#reviewer').readOnly = true;
+    for (const [key, sel] of Object.entries(prefFields)) {
+      const value = prefs[key] || '', input = $(sel);
+      if (key in pendingPrefs || document.activeElement === input) continue;  // 正在改的不覆盖
+      if (!value && synced[key] === undefined && input.value.trim()) { synced[key] = ''; savePref(key, 0); continue; }  // 服务端还没有：把本机原来填的传上去
+      if (input.value.trim() !== value) { input.value = value; changed = true; }
+      synced[key] = value;
+    }
+    if (changed) { try{localStorage.setItem('portable-merge-review-name',reviewer());}catch{} drafts.clear(); if (state) render(); }
+  } catch {}
+}
+function savePref(key, delay) {
+  pendingPrefs[key] = $(prefFields[key]).value.trim();
+  clearTimeout(savePref['t'+key]);
+  savePref['t'+key] = setTimeout(async () => {
+    const value = pendingPrefs[key];
+    try {
+      const response = await fetch('api/prefs', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({[key]: value})});
+      if (response.ok) synced[key] = value; else notify('个人设置保存失败：' + ((await response.json()).error || response.status));
+    } catch (e) { notify('个人设置保存失败：' + e.message); }
+    if (pendingPrefs[key] === value) delete pendingPrefs[key];
+  }, delay);
+}
+$('#reviewer').addEventListener('change',()=>{try{localStorage.setItem('portable-merge-review-name',reviewer());}catch{}savePref('name',0);drafts.clear();render();});
+$('#search').addEventListener('input',()=>{savePref('search',600);render();});
+['category','status'].forEach(id=>$('#'+id).addEventListener('change',render));
+$('#refresh').addEventListener('click',()=>{loadPrefs();load();});loadPrefs().then(load);setInterval(()=>{loadPrefs();load();},10000);
 if (location.pathname.includes('/s/')) $('#back').hidden = false;
