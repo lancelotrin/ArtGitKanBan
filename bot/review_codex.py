@@ -1,9 +1,8 @@
-"""自检复盘的 Codex 分析：一个长期的 Codex 会话（Code 模式，工作目录是网页配的项目目录）只读地查代码，按整个工程核对每天的提交。
+"""自检复盘的 Codex 分析：Codex（Code 模式，工作目录是网页配的项目目录）只读地查代码，按整个工程核对每天的提交。
 
 - 复盘前先把工程更新到 origin/main 最新：有本地改动先 stash，不在 main 就切回 main，再快进。
-- 所有人的复盘都在同一个会话里一轮一轮地跑（codex exec resume），前面查清的工程结构后面直接用，省 token。
-- 会话用满 ROTATE_TURNS 轮或超过 ROTATE_DAYS 天就让它把对工程的认识压成笔记，
-  开新会话时带上笔记，记忆不丢、上下文不会无限长。续用会话时 Codex 给的 usage 是整个会话的累计，这里减掉上一轮的累计得到本轮用量。会话 id 和笔记存在 data/review_codex.json。
+- 每个人都开一个新会话，带上共用的工程笔记：上下文不会越滚越大（每条命令都要带整个上下文，共用长会话很费 token）。
+- 一个人复盘完，在他的会话里续一轮，把新查到的工程认识并进笔记，下一个人接着用。笔记存在 data/review_codex.json。
 提示里不贴 diff，只给提交号，Codex 自己 git show / rg，需要多少看多少。
 """
 import datetime
@@ -17,8 +16,6 @@ from common import codex_cli
 from common.paths import DATA_DIR
 
 STATE_PATH = os.path.join(DATA_DIR, "review_codex.json")
-ROTATE_TURNS = 4  # 每轮的命令都要带上整个会话的上下文，会话越长越费；几轮就换新，靠笔记延续
-ROTATE_DAYS = 3
 MEMORY_MAX_CHARS = 3000
 TURN_TIMEOUT = 900
 GIT_TIMEOUT = 600
@@ -50,9 +47,10 @@ RULES = (
     "不要写「可能需要测试」「确保按预期工作」「兼容性测试」这类空话，没在工程里核实的猜测不要写。"
 )
 MEMORY_PROMPT = (
-    "这个会话要换新的了。把你在这个工程里查到的、对以后复盘有用的认识压成一份笔记，不超过 1500 字："
-    "主要模块和目录在哪、关键数据流（例如哪个 World/Context 管什么）、常见的易漏改点、各人常改的区域。"
-    "只写工程事实，不写具体某天的复盘结论。只输出笔记。"
+    "这次复盘结束了，下一个人会开新会话，只带工程笔记。把开头给你的工程笔记（没有就从空白开始）和这次新查到的、"
+    "对以后复盘有用的认识合并成一份完整的新笔记，不超过 1500 字：主要模块和目录在哪、关键数据流（例如哪个 World/Context 管什么）、"
+    "常见的易漏改点、各人常改的区域。旧笔记里查实过时的改掉，没新东西就原样输出旧笔记。"
+    "只写工程事实，不写具体某天的复盘结论，不要再执行命令。只输出笔记。"
 )
 
 
@@ -112,60 +110,26 @@ def update_to_main(root: str) -> tuple:
     return True, "；".join(notes)
 
 
-USAGE_KEYS = ("input_tokens", "cached_input_tokens", "output_tokens", "reasoning_output_tokens")
-
-
-def _turn_usage(state: dict, total: dict, resumed: bool) -> dict:
-    """续用会话时 usage 是会话累计，减掉上一轮的累计得到本轮的；新会话直接就是本轮的。"""
-    before = state.get("session_usage") or {}
-    legacy = state.pop("last_input_tokens", 0)  # 旧版本只记了累计输入
-    if resumed and not before and legacy:
-        before = {"input_tokens": legacy}
-    if not resumed:
-        before = {}
-    turn = {key: max(0, int(total.get(key) or 0) - int(before.get(key) or 0)) for key in USAGE_KEYS}
-    state["session_usage"] = {key: int(total.get(key) or 0) for key in USAGE_KEYS}
-    return turn
-
-
 def _note_usage(note, usage: dict, ok: bool = True, error: str = "") -> None:
     if note:
         note(codex_cli.label(), ok, error, int(usage.get("input_tokens") or 0), int(usage.get("output_tokens") or 0))
 
 
-def _ask(state: dict, root: str, prompt: str, note=None) -> tuple:
-    """在复盘会话里问一轮；没有会话就开新的。返回 (回答, usage)。"""
-    meta = {}
-    resume_id = state.get("thread_id") or ""
-    answer, total = codex_cli.code(prompt, root, TURN_TIMEOUT, keep=True, resume_id=resume_id, meta=meta)
-    usage = _turn_usage(state, total, bool(resume_id))
-    _note_usage(note, usage)
-    if not resume_id:
-        state.update(thread_id=meta.get("thread_id") or "", turns=0,
-                     started_at=datetime.datetime.now().isoformat(timespec="seconds"))
-    state["turns"] = int(state.get("turns") or 0) + 1
-    state["root"] = root
-    return answer.strip(), usage
+class _Session:
+    """一个人的复盘会话：第一次开新会话，之后（格式重写、更新笔记）续用它。
+    续用时 Codex 给的 usage 是整个会话的累计，这里换算成每一轮的再记统计；total 就是这个人一共用的。"""
 
+    def __init__(self, root: str, note=None):
+        self.root, self.note, self.thread_id, self.total = root, note, "", {}
 
-def _rotate_if_needed(state: dict, root: str, log, note=None) -> None:
-    if not state.get("thread_id"):
-        return
-    try:
-        age = datetime.datetime.now() - datetime.datetime.fromisoformat(state.get("started_at") or "")
-    except ValueError:
-        age = datetime.timedelta(days=ROTATE_DAYS)
-    too_long = int(state.get("turns") or 0) >= ROTATE_TURNS or age >= datetime.timedelta(days=ROTATE_DAYS)
-    if not too_long and state.get("root") == root:
-        return
-    try:
-        memory, _usage = _ask(state, root, MEMORY_PROMPT, note)
-        state["memory"] = memory[:MEMORY_MAX_CHARS]
-        log(f"[review codex] 会话换新，笔记 {len(state['memory'])} 字")
-    except (codex_cli.CodexError, codex_cli.CodexTimeout, OSError) as error:
-        log(f"[review codex] 写笔记失败，沿用旧笔记 {error}")
-    state["thread_id"] = ""
-    state["turns"] = 0
+    def ask(self, prompt: str) -> str:
+        meta = {}
+        answer, total = codex_cli.code(prompt, self.root, TURN_TIMEOUT, keep=True, resume_id=self.thread_id, meta=meta)
+        _note_usage(self.note, {key: max(0, int(total.get(key) or 0) - int(self.total.get(key) or 0))
+                                for key in ("input_tokens", "output_tokens")})
+        self.thread_id = self.thread_id or meta.get("thread_id") or ""
+        self.total = total
+        return answer.strip()
 
 
 def _first_prompt(state: dict, root: str) -> str:
@@ -190,27 +154,34 @@ def review(root: str, name: str, author: str, day_text: str, commits: list, head
     task = (f"复盘 {name}（git 作者 {author}）{day_text} 的 {len(commits)} 条提交。工程状态：{head_note}。\n"
             f"提交（短号|作者|时间|说明（分支））：\n{listing}\n按规则输出。")
     shorts = [short for short, _branch, _line in commits]
-    with _lock:
+    with _lock:  # 笔记是大家共用的，一个人跑完、笔记更新完再跑下一个
         state = load_state()
-        _rotate_if_needed(state, root, log, note)
-        prompt = task if state.get("thread_id") else _first_prompt(state, root) + "\n\n【本轮任务】\n" + task
+        session = _Session(root, note)
         try:
-            answer, usage = _ask(state, root, prompt, note)
+            answer = session.ask(_first_prompt(state, root) + "\n\n【本轮任务】\n" + task)
             if not valid_report(answer, shorts):
                 log(f"[review codex] {author} 格式不对，要求重写")
-                answer, usage = _ask(state, root, "上面的输出格式不对。按规则重新输出这几条提交的逐条要点和结论，只输出规定内容。", note)
+                answer = session.ask("上面的输出格式不对。按规则重新输出这几条提交的逐条要点和结论，只输出规定内容。")
         except (codex_cli.CodexError, codex_cli.CodexTimeout, OSError) as error:
             _note_usage(note, {}, False, str(error)[:200])
             log(f"[review codex] {author} 失败 {type(error).__name__}: {str(error)[:160]}")
-            state["fails"] = int(state.get("fails") or 0) + 1
-            if state["fails"] >= 2:  # 连着两次失败多半是会话坏了，换新会话（笔记还在）
-                state.update(thread_id="", turns=0, fails=0)
-            save_state(state)
             return ""
-        state["fails"] = 0
-        save_state(state)
-    log(f"[review codex] {author} commits={len(commits)} input={usage.get('input_tokens')} "
-        f"cached={usage.get('cached_input_tokens')} output={usage.get('output_tokens')} turns={state.get('turns')}")
+        review_usage = dict(session.total)
+        memory_note = "笔记没更新"
+        try:
+            memory = session.ask(MEMORY_PROMPT)
+            if memory:
+                for old in ("thread_id", "turns", "started_at", "fails", "session_usage", "last_input_tokens"):
+                    state.pop(old, None)  # 以前共用长会话时的字段
+                state.update(memory=memory[:MEMORY_MAX_CHARS], root=root,
+                             updated_at=datetime.datetime.now().isoformat(timespec="seconds"))
+                save_state(state)
+                memory_note = f"笔记 {len(state['memory'])} 字"
+        except (codex_cli.CodexError, codex_cli.CodexTimeout, OSError) as error:
+            log(f"[review codex] {author} 更新笔记失败，沿用旧笔记 {type(error).__name__}: {str(error)[:120]}")
+    log(f"[review codex] {author} commits={len(commits)} input={review_usage.get('input_tokens')} "
+        f"cached={review_usage.get('cached_input_tokens')} output={review_usage.get('output_tokens')} "
+        f"含笔记 input={session.total.get('input_tokens')} {memory_note}")
     if not valid_report(answer, shorts):
         return ""
     return re.sub(r"\n{3,}", "\n\n", answer).strip()
