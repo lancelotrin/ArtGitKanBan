@@ -91,6 +91,18 @@ class ReviewTests(unittest.TestCase):
         self.assertEqual(error.exception.code, 404)
         error.exception.close()
 
+    def test_export_both_keeps_only_replay_info(self):
+        self.snapshot.update({"ours": "o" * 40, "theirs": "t" * 40})
+        self.snapshot["files"][0].update({"replay_from": "b" * 40, "replay_commits": ["abc1234", "def5678"]})
+        self.vote("Alice", "both", comment="留住新字段")
+        with urlopen(self.url + "/api/export.csv") as response:
+            rows = response.read().decode("utf-8-sig").splitlines()
+        self.assertEqual(rows[1], "test-snapshot,example.cs,both,,,留住新字段,," + ",".join(["o" * 40, "b" * 40, "t" * 40]) + ",abc1234 def5678")
+        self.vote("Bob", "ours")
+        with urlopen(self.url + "/api/export.csv") as response:
+            row = response.read().decode("utf-8-sig").splitlines()[1]
+        self.assertTrue(row.startswith("test-snapshot,example.cs,ours,code,Bob,") and row.endswith(",,,,"))
+
     def test_export_and_cross_origin(self):
         (self.db.parent / 'review.md').write_text('# Review\nTest Author\n', encoding='utf-8')
         with urlopen(self.url + '/api/review.md') as response:

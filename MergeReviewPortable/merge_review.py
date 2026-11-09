@@ -34,6 +34,8 @@ HELP = """Merge Review Portable — 局域网合并冲突确认与处理
    不指定时使用 Git 冲突索引的 base。工具不会猜测每日同步提交。
 3. python merge_review.py serve --session "会话目录" --host 0.0.0.0 --port 8767
    用该主机的局域网 IP:8767 访问；页面内填写姓名并选择，导出 CSV。
+   CSV 中 both / 未选择的行只留 base（当前分支基底）、replay_from..replay_to 和要重放的
+   replay_commits（触及该文件的合入分支提交），可直接交给新 AI 会话重放。
    Windows 可用 Start.ps1 -RepoPath "仓库" 或 -SessionPath "会话目录" 后台启动。
    防火墙被阻止时，管理员执行 Allow-Lan.ps1 -Port 8767；仅开放 LocalSubnet。
 4. python merge_review.py plan --session "会话目录" --csv "导出的CSV"
@@ -198,6 +200,8 @@ def capture(repo, out, ours_label=None, theirs_label=None, replay_base=None):
     if not conflicts:
         raise ReviewError("没有未解决的索引冲突。")
     replay_oid = git.text("rev-parse", "--verify", replay_base + "^{commit}") if replay_base else None
+    found = git.run("merge-base", ours, theirs, check=False)
+    merge_base = found.stdout.decode().strip() if found.returncode == 0 else None
     stamp = datetime.now().astimezone()
     session = Path(out).resolve() / (stamp.strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:8])
     session.mkdir(parents=True, exist_ok=False)
@@ -230,6 +234,9 @@ def capture(repo, out, ours_label=None, theirs_label=None, replay_base=None):
         diff = git.text("diff", "--no-ext-diff", "--no-textconv", "--unified=3", ours, theirs, "--", path)
         binary = any(item and item["mode"] == "100644" and b"\0" in (git.blob(item["oid"]) or b"") for item in (left, right))
         binary = binary or category(path) in {"图片", "二进制 / 生成物"}
+        # both 的重放范围：从重放基线（未指定时用 merge-base）到合入分支，只看触及这个路径的提交。
+        replay_from = replay_oid or merge_base
+        replay_commits = git.text("log", "--reverse", "--format=%h", f"{replay_from}..{theirs}", "--", path).split() if replay_from else []
         note = "both：保留当前分支为基底，重放合入分支修改；重叠内容需人工确认。"
         if left is None:
             note += " 当前分支同路径不存在，注意删除/重命名意图。"
@@ -245,12 +252,13 @@ def capture(repo, out, ours_label=None, theirs_label=None, replay_base=None):
                       "theirs": right_history[0] if right_history else None,
                       "ours_history": left_history, "theirs_history": right_history,
                       "sources": sources, "stages": stages, "worktree": current,
+                      "replay_from": replay_from, "replay_commits": replay_commits,
                       "mapping_conflict": mapping, "binary": binary,
                       "diff": diff[:40000] + ("\n[仅显示前 40000 字符；完整对象保存在会话 blobs 中]" if len(diff) > 40000 else ""),
                       "advice": note})
     snapshot = {"version": VERSION, "id": session.name, "repo": str(git.repo), "date": stamp.date().isoformat(),
                 "ours": ours, "theirs": theirs, "ours_label": ours_label or branch_label(git, ours, True),
-                "theirs_label": theirs_label or branch_label(git, theirs), "replay_base": replay_oid, "files": files}
+                "theirs_label": theirs_label or branch_label(git, theirs), "replay_base": replay_oid, "merge_base": merge_base, "files": files}
     dump(session / "snapshot.json", snapshot)
     dump(session / "capture-manifest.json", {"snapshot_sha256": sha((session / "snapshot.json").read_bytes())})
     write_review_document(session, snapshot)

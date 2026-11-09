@@ -90,16 +90,29 @@ def make_handler(snapshot, db_path):
             if route == "/api/export.csv":
                 out = io.StringIO(newline="")
                 writer = csv.writer(out)
-                writer.writerow(["snapshot", "path", "category", "reviewer", "choice", "comment", "updated_at"])
+                # both / pending（默认 both）只留新 AI 会话重放要用的：以 base（当前分支）为基底，
+                # 重放 replay_from..replay_to 之间触及该路径的 replay_commits；分类、修改人、时间不导出。
+                writer.writerow(["snapshot", "path", "choice", "category", "reviewer", "comment", "updated_at",
+                                 "base", "replay_from", "replay_to", "replay_commits"])
                 votes = self.votes()
                 def safe(value):
-                    value = str(value)
+                    value = str(value or "")
                     return "'" + value if value[:1] in ("=", "+", "-", "@", "\t", "\r") else value
                 for file in snapshot["files"]:
                     records = [v for v in votes if v["file_id"] == file["id"]] or [{}]
                     for v in records:
-                        writer.writerow([safe(x) for x in [snapshot["id"], file["path"], file["category"],
-                            v.get("reviewer", ""), v.get("choice", "pending"), v.get("comment", ""), v.get("updated_at", "")]])
+                        choice = v.get("choice", "pending")
+                        if choice in ("both", "pending"):
+                            stage1 = ((file.get("stages") or {}).get("1") or {}).get("oid")
+                            replay_from = file.get("replay_from") or snapshot.get("replay_base") or (f"stage1:{stage1}" if stage1 else "")
+                            commits = file.get("replay_commits")
+                            row = [snapshot["id"], file["path"], choice, "", "", v.get("comment", ""), "",
+                                   snapshot.get("ours", ""), replay_from, snapshot.get("theirs", ""),
+                                   " ".join(commits) if commits is not None else ""]
+                        else:
+                            row = [snapshot["id"], file["path"], choice, file.get("category", ""), v.get("reviewer", ""),
+                                   v.get("comment", ""), v.get("updated_at", ""), "", "", "", ""]
+                        writer.writerow([safe(x) for x in row])
                 return self.reply(200, out.getvalue().encode("utf-8-sig"), "text/csv; charset=utf-8",
                                   {"Content-Disposition": 'attachment; filename="merge-review.csv"'})
             assets = {"/": ("index.html", "text/html"), "/app.js": ("app.js", "text/javascript"),
