@@ -493,6 +493,44 @@ def _reply(payload, status: int = 200) -> tuple:
     return status, payload
 
 
+def meta_action(action: str, data: dict | None = None) -> tuple:
+    """本地 .meta 改动：scan 只读；commit_imports / fix_guid 会提交（不推送），和拉代码、切分支共用锁。"""
+    from bot import echo_bot, meta_fix
+    data = data or {}
+    root = echo_bot.get_git_root()
+    if action == "scan":
+        try:
+            return _reply(dict(meta_fix.scan(root), root=root))
+        except RuntimeError as error:
+            return _reply({"error": str(error)}, 400)
+    if action not in ("commit_imports", "fix_guid"):
+        return _reply({"error": "不认识的操作。"}, 400)
+    if not echo_bot._pull_lock.acquire(blocking=False):
+        return _reply({"error": "正在拉代码或切分支，等它做完再提交。"}, 400)
+    try:
+        if action == "commit_imports":
+            paths = [str(item) for item in data.get("paths") or [] if str(item).strip()]
+            result = meta_fix.commit_imports(root, paths)
+        else:
+            path = str(data.get("path") or "").strip()
+            if not path:
+                raise ValueError("填要处理的 meta 路径。")
+            result = meta_fix.fix_guid(root, path)
+    except (ValueError, RuntimeError, OSError) as error:
+        return _reply({"error": str(error)}, 400)
+    finally:
+        echo_bot._pull_lock.release()
+    _branch_cache["at"] = 0.0
+    with _status_lock:
+        _status_cache["at"] = 0.0
+        _status_cache["data"] = None
+    try:
+        result["scan"] = meta_fix.scan(root)
+    except RuntimeError:
+        pass
+    return _reply(result)
+
+
 def admin_get(path: str, user: dict) -> tuple:
     """管理员的读接口，返回 (状态码, JSON)。新后端 /api/v1/admin/* 调它。"""
     if path == "/api/users":
@@ -507,6 +545,8 @@ def admin_get(path: str, user: dict) -> tuple:
         return _reply(wish_board.admin_view())
     if path == "/api/models":
         return _reply(models_view())
+    if path == "/api/meta":
+        return meta_action("scan")
     if path == "/api/bilibili":
         from bot import echo_bot
         view = echo_bot.bilibili_login_status()
@@ -644,6 +684,8 @@ def admin_post(path: str, data: dict, user: dict) -> tuple:
                 return _reply(result)
             view = echo_bot.control_bilibili_cookie(str(data.get("cookie") or ""))
             return _reply({key: view.get(key) for key in ("set", "login", "uname", "message")})
+        if path == "/api/meta":
+            return meta_action(str(data.get("action") or ""), data)
         if path == "/api/checkout":
             from bot import echo_bot
             branch = str(data.get("branch") or "").strip()

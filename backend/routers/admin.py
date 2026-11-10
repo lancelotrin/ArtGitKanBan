@@ -24,6 +24,7 @@ READS = {
     "wish": "心愿墙管理视图",
     "models": "模型（在 .env 里配）和今天的调用次数",
     "bilibili": "B 站登录状态",
+    "meta": "工作区里本地改过的 .meta：只改导入设置的、guid 变了的（含最近改 guid 的提交和要替换的引用）",
 }
 WRITES = {
     "users": "改账号角色或移除账号：action=user/admin/remove，open_id",
@@ -35,6 +36,7 @@ WRITES = {
     "bilibili": "B 站登录：action=qr/qr_poll，或 cookie",
     "sites": "看板开关：action=open（开放给普通用户）或 private（只看自己的），port（如 /review），on",
     "checkout": "把工作区切到某个分支：branch",
+    "meta": "处理本地 .meta 改动（只提交不推送）：action=commit_imports（paths 可选）提交只改导入设置的；fix_guid（path）把最近改 guid 的提交里引用旧 guid 的换成本地新 guid 再一起提交",
     "pull": "定时拉代码：enabled、hours、run_now",
     "watch": "盯目录：enabled、minutes、days、rules、run_now",
     "reminders/delete": "取消一条提醒：id",

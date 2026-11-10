@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
+import { api } from "../../api/client";
 import { ActionButton, adminPost, Clip, Lines, OnOff, stamp, useAdmin, useSynced } from "./common";
-import type { BombAdmin, PullState, Status, WatchState } from "./types";
+import type { BombAdmin, MetaCommit, MetaItem, MetaResult, MetaScan, PullState, Status, WatchState } from "./types";
 
 const BOMB_BOARD = "/bomb/";
 
@@ -183,6 +184,90 @@ function BombSection() {
   );
 }
 
+function GuidItem({ item, onDone }: { item: MetaItem; onDone: (result: MetaResult) => void }) {
+  const commit = item.commit as MetaCommit | undefined;
+  const refs = item.refs || [];
+  const others = item.others;
+  return (
+    <div className="sub">
+      <div><code>{item.path}</code></div>
+      <div className="meta">提交里是 <code>{item.old_guid}</code>，本地是 <code>{item.new_guid}</code></div>
+      {commit?.hash ? (
+        <div className="meta">最近改这个 guid 的提交：{commit.short} {commit.author} {commit.date} {commit.subject}</div>
+      ) : <div className="bad">找不到改过这个 guid 的提交，不能自动处理。</div>}
+      {refs.length ? (
+        <ul className="meta">
+          {refs.map((ref) => (
+            <li key={ref.path}>
+              <code>{ref.path}</code> 引用 {ref.count} 处{ref.dirty && <span className="bad">（本地也有别的修改，会一起提交）</span>}
+            </li>
+          ))}
+        </ul>
+      ) : commit?.hash ? <div className="meta">那次提交里没有文件还引用旧 guid，只提交 meta。</div> : null}
+      {others && !others.done && <div className="bad">别的文件有没有引用旧 guid 没查完。</div>}
+      {others?.paths?.length ? (
+        <div className="bad">
+          还有 {others.paths.length} 个别的文件引用旧 guid，不在那次提交里，不会改：
+          <Clip text={others.paths.join("\n")} />
+        </div>
+      ) : null}
+      {commit?.hash && (
+        <div className="row" style={{ marginTop: 8 }}>
+          <ActionButton className="primary" label={`替换 ${refs.length} 个引用并提交`} done="已提交"
+            run={async () => onDone(await adminPost<MetaResult>("meta", { action: "fix_guid", path: item.path }))} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MetaSection() {
+  const [scan, setScan] = useState<MetaScan>();
+  const [message, setMessage] = useState("");
+  const done = (result: MetaResult) => {
+    setMessage(result.message || "");
+    if (result.scan) setScan(result.scan);
+  };
+  const imports = scan?.items.filter((item) => item.kind === "import") || [];
+  const guids = scan?.items.filter((item) => item.kind === "guid") || [];
+  const unknown = scan?.items.filter((item) => item.kind === "unknown") || [];
+  return (
+    <section id="sec-meta">
+      <h2>meta 改动</h2>
+      <p className="meta">
+        查工作区里本地改过的 <code>.meta</code>。guid 没变（只改了导入设置）的直接提交；guid 变了的，找最近一次改这个 meta guid 的提交，
+        把那次提交里引用旧 guid 的文件换成本地的新 guid，再和 meta 一起提交。只 commit 不 push。「拉代码」会清掉本地修改，先处理完再拉。
+      </p>
+      <div className="row">
+        <ActionButton className="primary" label="检查" done="已检查" run={async () => {
+          setScan(await api<MetaScan>("/admin/meta"));
+          setMessage("");
+        }} />
+      </div>
+      <p className="meta">{message}</p>
+      {scan && !scan.items.length && <div className="meta">没有本地改过的 meta。</div>}
+      {imports.length > 0 && (
+        <div className="sub">
+          <label>只改导入设置（{imports.length} 个）</label>
+          <Clip text={imports.map((item) => item.path).join("\n")} />
+          <div className="row" style={{ marginTop: 8 }}>
+            <ActionButton className="primary" label={`提交这 ${imports.length} 个`} done="已提交"
+              run={async () => done(await adminPost<MetaResult>("meta", { action: "commit_imports", paths: imports.map((item) => item.path) }))} />
+          </div>
+        </div>
+      )}
+      {guids.length > 0 && <label style={{ marginTop: 16 }}>guid 变了（{guids.length} 个）</label>}
+      {guids.map((item) => <GuidItem key={item.path} item={item} onDone={done} />)}
+      {unknown.length > 0 && (
+        <div className="sub">
+          <label>读不到 guid 行，没处理</label>
+          <Clip text={unknown.map((item) => item.path).join("\n")} />
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function CodeTab({ status }: { status?: Status }) {
   return (
     <>
@@ -191,6 +276,7 @@ export default function CodeTab({ status }: { status?: Status }) {
         <PullSection pull={status?.pull} />
         <WatchSection watch={status?.watch} />
       </div>
+      <MetaSection />
       <BombSection />
     </>
   );
