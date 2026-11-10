@@ -27,14 +27,14 @@ class MetaFixTest(unittest.TestCase):
         self.run_git("init", "-q", "-b", "main")
         self.run_git("config", "user.name", "tester")
         self.run_git("config", "user.email", "tester@example.com")
-        # 之前的资源用 OLD，old.prefab 引用它
-        self.write("Assets/hero.mat.meta", meta(OLD))
+        # 之前的资源（另一个目录、另一个名字）用 OLD，old.prefab 引用它
+        self.write("Assets/Other/copy.mat.meta", meta(OLD))
         self.write("Assets/old.prefab", f"m_Material: {{fileID: 2100000, guid: {OLD}, type: 2}}\n")
         self.write("Assets/tex.png.meta", meta(TEX))
         self.write("Assets/hero_b.prefab", f"c: {{guid: {TEX}}}\n")
         self.commit("之前的资源")
-        # 别人在另一个目录提交了不同名字的资源，meta 拷过来 guid 也是 OLD，并有预制体引用它
-        self.write("Assets/Other/copy.mat.meta", meta(OLD))
+        # 后来有人拷了一份，hero.mat.meta 的 guid 也是 OLD，并有预制体引用它
+        self.write("Assets/hero.mat.meta", meta(OLD))
         self.write("Assets/hero_a.prefab", f"a: {{guid: {OLD}}}\nb: {{guid: {OLD}}}\n")
         self.commit("guid 重复的提交")
         # 之后又有人引用了 OLD；old.prefab 改了别的内容，但它在重复提交前就引用了
@@ -78,6 +78,8 @@ class MetaFixTest(unittest.TestCase):
         self.assertEqual((guid["old_guid"], guid["new_guid"]), (OLD, NEW))
         self.assertEqual(guid["commit"]["subject"], "guid 重复的提交")
         self.assertEqual(guid["commit"]["dup_paths"], ["Assets/Other/copy.mat.meta"])
+        self.assertTrue(guid["commit"]["mine_later"])
+        self.assertEqual(guid["commit"]["other"]["subject"], "之前的资源")
         self.assertTrue(guid["grep_done"])
         refs = {ref["path"]: ref for ref in guid["refs"]}
         self.assertEqual(set(refs), {"Assets/hero_a.prefab", "Assets/later.prefab", "Assets/old.prefab",
@@ -105,6 +107,19 @@ class MetaFixTest(unittest.TestCase):
         self.assertIn("Assets/hero_b.prefab", status)
         with self.assertRaises(ValueError):
             meta_fix.apply_all(self.root)
+
+    def test_local_meta_is_the_earlier_one(self) -> None:
+        # 反过来：本地被换 guid 的是之前那个资源，之前的引用换成本地 guid，重复提交及之后的不动
+        self.write("Assets/hero.mat.meta", meta(OLD))
+        self.write("Assets/Other/copy.mat.meta", meta(NEW))
+        item = next(row for row in meta_fix.scan(self.root)["items"] if row["kind"] == "guid")
+        self.assertEqual(item["path"], "Assets/Other/copy.mat.meta")
+        self.assertFalse(item["commit"]["mine_later"])
+        self.assertEqual(item["commit"]["subject"], "guid 重复的提交")
+        self.assertEqual(item["commit"]["dup_paths"], ["Assets/hero.mat.meta"])
+        replace = {ref["path"]: ref["replace"] for ref in item["refs"]}
+        self.assertEqual(replace, {"Assets/old.prefab": True, "Assets/hero_a.prefab": False,
+                                   "Assets/later.prefab": False, "Assets/hero_b.prefab": False})
 
     def test_guid_changed_without_duplicate(self) -> None:
         self.write("Assets/tex.png.meta", meta(NEW))

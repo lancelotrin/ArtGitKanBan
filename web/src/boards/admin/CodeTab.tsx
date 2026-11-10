@@ -214,7 +214,20 @@ function GuidItem({ item }: { item: MetaItem }) {
       {!commit?.hash ? <div className="bad">{item.note || "找不到重复 guid 的提交，不处理。"}</div> : (
         <>
           <div className="meta">旧 guid 和这些 meta 重复：{(commit.dup_paths || []).map((dup) => <code key={dup}>{dup} </code>)}</div>
-          <div className="meta">重复提交：{commit.short} {commit.author} {commit.date} {commit.subject}</div>
+          <div className="meta">
+            重复提交（两边里后拿到这个 guid 的）：{commit.short} {commit.author} {commit.date} {commit.subject}
+          </div>
+          {commit.mine_later ? (
+            <div className="meta">
+              本地这个 meta 是后来的；另一个在 {commit.other?.short} {commit.other?.author} {commit.other?.date} 就有这个 guid。
+              重复提交及之后开始的引用换成本地 guid，之前的不动。
+            </div>
+          ) : (
+            <div className="bad">
+              本地这个 meta 是之前的（{(commit.mine as MetaCommit | undefined)?.short || "?"}），另一个是后来的。
+              重复提交之前的引用换成本地 guid，之后的不动。
+            </div>
+          )}
           {item.grep_done === false && <div className="bad">没查完哪些文件引用旧 guid，这个先不处理。</div>}
           <div className="meta">换成本地 guid（{change.length} 个文件）{change.length ? "：" : ""}</div>
           {change.length > 0 && <RefList refs={change} />}

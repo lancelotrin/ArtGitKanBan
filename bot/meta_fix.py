@@ -2,9 +2,10 @@
 
 - guid 没变（只动了导入设置）：可以直接提交这些 meta。
 - guid 变了：说明提交里的旧 guid 和别的资源重复了（Unity 本地给这个 meta 换了新 guid）。
-  找最近一次提交了「另一个 .meta 也用这个旧 guid」的提交（重复提交），和路径无关。
-  工作区里引用旧 guid 的文件，最早引用它的提交在重复提交之前的，是之前那个资源的引用，不动；
-  在重复提交或之后的，换成本地的新 guid。
+  工作区里还有别的 .meta 也用这个旧 guid（和路径无关）。两边各自拿到这个 guid 的提交里，
+  后的那次是重复提交。引用旧 guid 的文件，最早引用它的提交在重复提交之前的，是之前那个资源的引用；
+  在重复提交或之后的，是后来那个资源的引用。本地这个 meta 是后来的（通常如此），就把后来的引用换成本地新 guid；
+  本地这个是之前的，就把之前的引用换成本地新 guid。
 
 一个按钮全部处理，一次提交。
 
@@ -90,8 +91,8 @@ def own_guid(root: str, path: str) -> str:
         return ""
 
 
-def dup_guid_commit(root: str, guid: str, dup_paths: list) -> dict:
-    """工作区里还在用这个 guid 的别的 meta，最近一次把 guid 写进去的提交（重复提交）。只翻这几个文件的历史。"""
+def guid_commit(root: str, guid: str, dup_paths: list) -> dict:
+    """这几个 meta 最近一次把 guid 写进去的提交。只翻这几个文件的历史。"""
     if not dup_paths:
         return {}
     ok, out = git(root, ["log", "-1", "-G", rf"^guid: *{guid}", "--no-renames",
@@ -138,13 +139,29 @@ def after_dup(root: str, first: dict, dup: dict) -> bool:
     return first["time"] >= dup["time"]
 
 
+def dup_commit(root: str, path: str, guid: str, dup_paths: list) -> dict:
+    """重复提交：本地这个 meta 和别的 meta 各自拿到 guid 的提交里，后的那次。mine_later 表示本地这个是后来的。"""
+    other = guid_commit(root, guid, dup_paths)
+    if not other:
+        return {}
+    mine = guid_commit(root, guid, [path])
+    if not mine or not after_dup(root, mine, other):
+        return dict(other, mine_later=False, mine=mine)
+    return dict(mine, dup_paths=other["dup_paths"], mine_later=True, other=other)
+
+
 def classify_ref(root: str, path: str, guid: str, dup: dict) -> dict:
     first = first_ref_commit(root, path, guid)
     if not first:
         return {"replace": False, "reason": "只在本地引用，没提交过", "since": first}
-    if after_dup(root, first, dup):
-        return {"replace": True, "reason": "重复提交及之后引用的", "since": first}
-    return {"replace": False, "reason": "重复提交之前就引用了，是之前那个资源的", "since": first}
+    later = after_dup(root, first, dup)
+    if dup["mine_later"]:
+        if later:
+            return {"replace": True, "reason": "重复提交及之后引用的", "since": first}
+        return {"replace": False, "reason": "重复提交之前就引用了，是之前那个资源的", "since": first}
+    if later:
+        return {"replace": False, "reason": "重复提交及之后引用的，是后来那个资源的", "since": first}
+    return {"replace": True, "reason": "重复提交之前引用的，是本地这个资源的", "since": first}
 
 
 def scan(root: str) -> dict:
@@ -187,7 +204,7 @@ def scan(root: str) -> dict:
                 dups = sorted(hit for hit in hits if hit != item["path"] and hit.endswith(".meta")
                               and own_guid(root, hit) == item["old_guid"])
                 item["hits"] = hits
-                jobs.append(pool.submit(dup_guid_commit, root, item["old_guid"], dups))
+                jobs.append(pool.submit(dup_commit, root, item["path"], item["old_guid"], dups))
             for item, job in zip(guids, jobs):
                 item["commit"] = job.result()
             mark = lap("找重复提交", mark)
