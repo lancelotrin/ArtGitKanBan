@@ -500,7 +500,9 @@ def meta_action(action: str, data: dict | None = None) -> tuple:
     root = echo_bot.get_git_root()
     if action == "scan":
         try:
-            return _reply(dict(meta_fix.scan(root), root=root))
+            view = meta_fix.scan(root)
+            echo_bot.log(f"[meta] scan {len(view['items'])} 个 meta，{view['seconds']}s {view['timing']}")
+            return _reply(dict(view, root=root))
         except RuntimeError as error:
             return _reply({"error": str(error)}, 400)
     if action != "apply_all":
@@ -517,10 +519,7 @@ def meta_action(action: str, data: dict | None = None) -> tuple:
     with _status_lock:
         _status_cache["at"] = 0.0
         _status_cache["data"] = None
-    try:
-        result["scan"] = meta_fix.scan(root)
-    except RuntimeError:
-        pass
+    echo_bot.log(f"[meta] {result.get('commit')} {result.get('message')}")
     return _reply(result)
 
 

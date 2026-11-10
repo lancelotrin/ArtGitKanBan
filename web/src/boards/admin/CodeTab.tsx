@@ -261,6 +261,12 @@ function MetaSection() {
         )}
       </div>
       <p className="meta">{message}</p>
+      {scan?.seconds !== undefined && (
+        <div className="meta">
+          检查用时 {scan.seconds} 秒{scan.timing && Object.keys(scan.timing).length
+            ? "（" + Object.entries(scan.timing).map(([name, sec]) => `${name} ${sec} 秒`).join("，") + "）" : ""}
+        </div>
+      )}
       {scan && !scan.items.length && <div className="meta">没有本地改过的 meta。</div>}
       {imports.length > 0 && (
         <div className="sub">

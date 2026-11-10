@@ -97,5 +97,5 @@ export interface MetaItem {
   refs?: MetaRef[];
   grep_done?: boolean;
 }
-export interface MetaScan { root?: string; items: MetaItem[] }
+export interface MetaScan { root?: string; items: MetaItem[]; seconds?: number; timing?: Record<string, number> }
 export interface MetaResult { ok?: boolean; message?: string; commit?: string; scan?: MetaScan }

@@ -13,10 +13,12 @@
 import os
 import re
 import subprocess
+import time
+from concurrent.futures import ThreadPoolExecutor
 
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 GUID_LINE = re.compile(r"(?m)^guid:\s*([0-9a-fA-F]{32})\s*$")
-MAX_REF_BYTES = 64 * 1024 * 1024
+WORKERS = 8
 
 
 def git(root: str, args: list, timeout: int = 60) -> tuple:
@@ -63,35 +65,59 @@ def read_work(root: str, path: str) -> bytes:
         return handle.read()
 
 
-def dup_guid_commit(root: str, path: str, guid: str) -> dict:
-    """最近一次提交了别的 .meta、它的 guid 也是 guid 的提交。和路径无关，只看 guid 重复。"""
-    ok, out = git(root, ["log", "-n", "30", "-G", rf"^guid: *{guid}", "--no-renames",
-                         "--format=\x1e%H%x1f%h%x1f%an%x1f%ad%x1f%s%x1f%ct", "--date=format:%Y-%m-%d %H:%M",
-                         "--name-only", "HEAD", "--", "*.meta", f":(exclude){path}"], 120)
-    if not ok:
+def grep_guids(root: str, guids: list) -> tuple:
+    """一次 git grep 查全部 guid 在工作区（已跟踪文件）的引用：(查完没有, {guid: {路径: 处数}})。"""
+    args = ["grep", "-I", "-i", "-F", "-o", "-z"]
+    for guid in guids:
+        args += ["-e", guid]
+    ok, out = git(root, args, 600)
+    if not ok and out:
+        return False, {}
+    found = {guid: {} for guid in guids}
+    for line in out.split("\n"):
+        path, _, match = line.partition("\0")
+        guid = match.strip().lower()
+        if guid in found:
+            found[guid][path] = found[guid].get(path, 0) + 1
+    return True, found
+
+
+def own_guid(root: str, path: str) -> str:
+    try:
+        with open(os.path.join(root, path), "rb") as handle:
+            return guid_of(handle.read(4096).decode("utf-8", errors="replace"))
+    except OSError:
+        return ""
+
+
+def dup_guid_commit(root: str, guid: str, dup_paths: list) -> dict:
+    """工作区里还在用这个 guid 的别的 meta，最近一次把 guid 写进去的提交（重复提交）。只翻这几个文件的历史。"""
+    if not dup_paths:
         return {}
-    for block in out.split("\x1e"):
-        lines = [line for line in block.strip().splitlines() if line.strip()]
-        if not lines:
-            continue
-        full, short, author, date, subject, stamp = (lines[0].split("\x1f") + [""] * 6)[:6]
-        dups = []
-        for meta_path in lines[1:]:
-            if meta_path == path or not meta_path.endswith(".meta"):
-                continue
+    ok, out = git(root, ["log", "-1", "-G", rf"^guid: *{guid}", "--no-renames",
+                         "--format=%H%x1f%h%x1f%an%x1f%ad%x1f%s%x1f%ct", "--date=format:%Y-%m-%d %H:%M",
+                         "--name-only", "HEAD", "--"] + dup_paths, 300)
+    lines = [line for line in out.splitlines() if line.strip()] if ok else []
+    if not lines:
+        return {}
+    full, short, author, date, subject, stamp = (lines[0].split("\x1f") + [""] * 6)[:6]
+    wanted = set(dup_paths)
+    dups = []
+    for meta_path in lines[1:]:
+        if meta_path in wanted:
             shown, text = git(root, ["show", f"{full}:{meta_path}"])
             if shown and guid_of(text) == guid:
                 dups.append(meta_path)
-        if dups:
-            return {"hash": full, "short": short, "author": author, "date": date, "subject": subject,
-                    "time": int(stamp or 0), "dup_paths": dups}
-    return {}
+    if not dups:
+        return {}
+    return {"hash": full, "short": short, "author": author, "date": date, "subject": subject,
+            "time": int(stamp or 0), "dup_paths": dups}
 
 
 def first_ref_commit(root: str, path: str, guid: str) -> dict:
     """这个文件最早引用 guid 的提交。没有（只是本地加的）返回 {}。"""
     ok, out = git(root, ["log", "--reverse", "-G", guid, "--format=%H%x1f%h%x1f%an%x1f%ad%x1f%ct",
-                         "--date=format:%Y-%m-%d %H:%M", "HEAD", "--", path], 120)
+                         "--date=format:%Y-%m-%d %H:%M", "HEAD", "--", path], 300)
     lines = out.strip().splitlines() if ok else []
     if not lines:
         return {}
@@ -112,32 +138,24 @@ def after_dup(root: str, first: dict, dup: dict) -> bool:
     return first["time"] >= dup["time"]
 
 
-def guid_refs(root: str, old: str, dup: dict, skip: set, dirty: dict) -> dict:
-    """工作区里引用旧 guid 的已跟踪文件，分成要换的（重复提交及之后引用的）和不动的。"""
-    ok, out = git(root, ["grep", "-l", "-I", "-i", "-F", "-z", old], 120)
-    done = ok or not out
-    pattern = re.compile(re.escape(old.encode("ascii")), re.I)
-    refs = []
-    for path in sorted({item for item in out.split("\0") if item} - skip) if done else []:
-        absolute = os.path.join(root, path)
-        if not os.path.isfile(absolute) or os.path.getsize(absolute) > MAX_REF_BYTES:
-            continue
-        count = len(pattern.findall(read_work(root, path)))
-        if not count:
-            continue
-        first = first_ref_commit(root, path, old)
-        if not first:
-            replace, reason = False, "只在本地引用，没提交过"
-        elif after_dup(root, first, dup):
-            replace, reason = True, "重复提交及之后引用的"
-        else:
-            replace, reason = False, "重复提交之前就引用了，是之前那个资源的"
-        refs.append({"path": path, "count": count, "dirty": path in dirty, "replace": replace,
-                     "reason": reason, "since": first})
-    return {"done": done, "refs": refs}
+def classify_ref(root: str, path: str, guid: str, dup: dict) -> dict:
+    first = first_ref_commit(root, path, guid)
+    if not first:
+        return {"replace": False, "reason": "只在本地引用，没提交过", "since": first}
+    if after_dup(root, first, dup):
+        return {"replace": True, "reason": "重复提交及之后引用的", "since": first}
+    return {"replace": False, "reason": "重复提交之前就引用了，是之前那个资源的", "since": first}
 
 
 def scan(root: str) -> dict:
+    started = time.time()
+    timing = {}
+
+    def lap(name: str, since: float) -> float:
+        now = time.time()
+        timing[name] = round(now - since, 1)
+        return now
+
     dirty = dirty_paths(root)
     items = []
     for path, code in sorted(dirty.items()):
@@ -154,19 +172,42 @@ def scan(root: str) -> dict:
         item = {"path": path, "old_guid": old, "new_guid": new}
         if not old or not new:
             item.update(kind="unknown", note="读不到 guid 行，不处理。")
-        elif old == new:
-            item["kind"] = "import"
         else:
-            item["kind"] = "guid"
-            commit = dup_guid_commit(root, path, old)
-            item["commit"] = commit
-            if commit:
-                found = guid_refs(root, old, commit, {path} | set(commit["dup_paths"]), dirty)
-                item["refs"], item["grep_done"] = found["refs"], found["done"]
-            else:
-                item["note"] = "找不到别的 meta 用了同一个 guid 的提交，不处理。"
+            item["kind"] = "import" if old == new else "guid"
         items.append(item)
-    return {"items": items}
+    mark = lap("读工作区", started)
+    guids = [item for item in items if item["kind"] == "guid"]
+    if guids:
+        done, found = grep_guids(root, sorted({item["old_guid"] for item in guids}))
+        mark = lap("查引用", mark)
+        with ThreadPoolExecutor(WORKERS) as pool:
+            jobs = []
+            for item in guids:
+                hits = found.get(item["old_guid"], {})
+                dups = sorted(hit for hit in hits if hit != item["path"] and hit.endswith(".meta")
+                              and own_guid(root, hit) == item["old_guid"])
+                item["hits"] = hits
+                jobs.append(pool.submit(dup_guid_commit, root, item["old_guid"], dups))
+            for item, job in zip(guids, jobs):
+                item["commit"] = job.result()
+            mark = lap("找重复提交", mark)
+            history = []
+            for item in guids:
+                hits = item.pop("hits")
+                item["grep_done"] = done
+                commit = item["commit"]
+                if not commit:
+                    item["note"] = "找不到别的 meta 用了同一个 guid 的提交，不处理。"
+                    continue
+                skip = {item["path"]} | set(commit["dup_paths"])
+                item["refs"] = [{"path": path, "count": count, "dirty": path in dirty}
+                                for path, count in sorted(hits.items()) if path not in skip]
+                for ref in item["refs"]:
+                    history.append((ref, pool.submit(classify_ref, root, ref["path"], item["old_guid"], commit)))
+            for ref, job in history:
+                ref.update(job.result())
+            lap("查引用历史", mark)
+    return {"items": items, "timing": timing, "seconds": round(time.time() - started, 1)}
 
 
 def short_names(paths: list) -> str:
@@ -185,7 +226,7 @@ def commit(root: str, message: str, paths: list) -> str:
 
 def apply_all(root: str) -> dict:
     """一次处理全部：导入设置的 meta 直接提交；guid 重复的替换重复提交及之后的引用，和 meta 一起提交。"""
-    items = scan(root)["items"]
+    items = scan(root)["items"]  # 提交前按当前工作区重新检查一遍
     imports = [item["path"] for item in items if item["kind"] == "import"]
     fixable = [item for item in items if item["kind"] == "guid" and item.get("commit") and item.get("grep_done")]
     skipped = [item["path"] for item in items if item["kind"] != "import" and item not in fixable]
@@ -223,4 +264,6 @@ def apply_all(root: str) -> dict:
         text += f"有 {kept} 个文件在重复提交之前就引用旧 guid，没改。"
     if skipped:
         text += f"{len(skipped)} 个 meta 没处理：" + "、".join(os.path.basename(path) for path in skipped)
-    return {"ok": True, "commit": short, "paths": paths, "message": text}
+    done = set(imports) | {item["path"] for item in fixable}
+    remaining = {"items": [item for item in items if item["path"] not in done]}
+    return {"ok": True, "commit": short, "paths": paths, "message": text, "scan": remaining}
