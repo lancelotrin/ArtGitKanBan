@@ -28,16 +28,17 @@ class MetaFixTest(unittest.TestCase):
         self.run_git("config", "user.name", "tester")
         self.run_git("config", "user.email", "tester@example.com")
         self.write("Assets/old.prefab", f"m_Material: {{fileID: 2100000, guid: {OLD}, type: 2}}\n")
-        self.write("Assets/tex.png.meta", meta(TEX))
-        self.commit("旧的")
-        # 别人提交了同名资源，guid 是 OLD，并且有材质引用它
         self.write("Assets/hero.mat.meta", meta(OLD))
+        self.write("Assets/tex.png.meta", meta(TEX))
+        self.commit("我的资源")
+        # 别人在另一个目录提交了不同名字的资源，meta 拷过来 guid 也是 OLD，并有预制体引用它
+        self.write("Assets/Other/copy.mat.meta", meta(OLD))
         self.write("Assets/hero_a.prefab", f"a: {{guid: {OLD}}}\nb: {{guid: {OLD.upper()}}}\n")
         self.write("Assets/hero_b.prefab", f"c: {{guid: {TEX}}}\n")
-        self.commit("同名资源")
+        self.commit("guid 重复的提交")
         self.write("Assets/later.txt", "later\n")
         self.commit("后来的提交")
-        # 本地：hero.mat.meta 的 guid 是 NEW，tex.png.meta 只改导入设置，还有一个非 meta 的本地修改
+        # 本地：Unity 给 hero.mat.meta 换了新 guid，tex.png.meta 只改导入设置，还有一个非 meta 的本地修改
         self.write("Assets/hero.mat.meta", meta(NEW))
         self.write("Assets/tex.png.meta", meta(TEX).replace("2048", "1024"))
         self.write("Assets/later.txt", "dirty\n")
@@ -69,7 +70,8 @@ class MetaFixTest(unittest.TestCase):
         guid = items["Assets/hero.mat.meta"]
         self.assertEqual(guid["kind"], "guid")
         self.assertEqual((guid["old_guid"], guid["new_guid"]), (OLD, NEW))
-        self.assertEqual(guid["commit"]["subject"], "同名资源")
+        self.assertEqual(guid["commit"]["subject"], "guid 重复的提交")
+        self.assertEqual(guid["commit"]["dup_paths"], ["Assets/Other/copy.mat.meta"])
         self.assertEqual(guid["refs"], [{"path": "Assets/hero_a.prefab", "count": 2, "dirty": False}])
         self.assertEqual(guid["others"], {"done": True, "paths": ["Assets/old.prefab"]})
 
@@ -89,10 +91,19 @@ class MetaFixTest(unittest.TestCase):
                          ["Assets/hero.mat.meta", "Assets/hero_a.prefab"])
         self.assertEqual(self.read("Assets/hero_a.prefab"), f"a: {{guid: {NEW}}}\nb: {{guid: {NEW}}}\n")
         self.assertIn(OLD, self.read("Assets/old.prefab"))  # 不在那次提交里，只报不改
+        self.assertIn(OLD, self.read("Assets/Other/copy.mat.meta"))  # 重复的 meta 自己不动
         self.assertIn("还有 1 个", result["message"])
         status = self.run_git("status", "--porcelain")
         self.assertIn("Assets/later.txt", status)
         self.assertIn("Assets/tex.png.meta", status)
+        with self.assertRaises(ValueError):
+            meta_fix.fix_guid(self.root, "Assets/tex.png.meta")
+
+    def test_guid_changed_without_duplicate(self) -> None:
+        self.write("Assets/tex.png.meta", meta(NEW))
+        item = next(row for row in meta_fix.scan(self.root)["items"] if row["path"] == "Assets/tex.png.meta")
+        self.assertEqual(item["kind"], "guid")
+        self.assertEqual(item["commit"], {})
         with self.assertRaises(ValueError):
             meta_fix.fix_guid(self.root, "Assets/tex.png.meta")
 

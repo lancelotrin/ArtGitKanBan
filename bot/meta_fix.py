@@ -1,7 +1,8 @@
 """工作区里本地改过的 .meta。
 
 - guid 没变（只动了导入设置）：可以直接提交这些 meta。
-- guid 变了：找最近一次改动这个 meta 的 guid 的提交（通常是别人提交了同名资源，生成了另一个 guid），
+- guid 变了：说明提交里的旧 guid 和别的资源重复了（Unity 本地给这个 meta 换了新 guid）。
+  找最近一次提交了「另一个 .meta 也用这个旧 guid」的提交，和路径无关，
   把那次提交里引用旧 guid 的文件改成本地的新 guid，再和 meta 一起提交。
 
 只 commit，不 push、不拉、不切分支。调用方负责和拉代码互斥。
@@ -59,24 +60,40 @@ def read_work(root: str, path: str) -> bytes:
         return handle.read()
 
 
-def last_guid_commit(root: str, path: str) -> dict:
-    ok, out = git(root, ["log", "-1", "-G", r"^guid:", "--format=%H%x1f%h%x1f%an%x1f%ad%x1f%s",
-                         "--date=format:%Y-%m-%d %H:%M", "HEAD", "--", path])
-    if not ok or not out.strip():
+def dup_guid_commit(root: str, path: str, guid: str) -> dict:
+    """最近一次提交了别的 .meta、它的 guid 也是 guid 的提交。和路径无关，只看 guid 重复。"""
+    ok, out = git(root, ["log", "-n", "30", "-G", rf"^guid: *{guid}", "--no-renames",
+                         "--format=\x1e%H%x1f%h%x1f%an%x1f%ad%x1f%s", "--date=format:%Y-%m-%d %H:%M",
+                         "--name-only", "HEAD", "--", "*.meta", f":(exclude){path}"], 120)
+    if not ok:
         return {}
-    full, short, author, date, subject = (out.strip().split("\x1f") + [""] * 5)[:5]
-    return {"hash": full, "short": short, "author": author, "date": date, "subject": subject}
+    for block in out.split("\x1e"):
+        lines = [line for line in block.strip().splitlines() if line.strip()]
+        if not lines:
+            continue
+        full, short, author, date, subject = (lines[0].split("\x1f") + [""] * 5)[:5]
+        dups = []
+        for meta_path in lines[1:]:
+            if meta_path == path or not meta_path.endswith(".meta"):
+                continue
+            shown, text = git(root, ["show", f"{full}:{meta_path}"])
+            if shown and guid_of(text) == guid:
+                dups.append(meta_path)
+        if dups:
+            return {"hash": full, "short": short, "author": author, "date": date, "subject": subject,
+                    "dup_paths": dups}
+    return {}
 
 
-def guid_refs(root: str, commit: str, meta_path: str, old: str, dirty: dict) -> list:
-    """那次提交里动过、现在工作区里还引用旧 guid 的文件。"""
+def guid_refs(root: str, commit: str, skip: set, old: str, dirty: dict) -> list:
+    """那次提交里动过、现在工作区里还引用旧 guid 的文件。skip 是本地 meta 和重复 guid 的 meta 自己。"""
     ok, out = git(root, ["show", "--name-only", "--no-renames", "--format=", "-z", commit])
     if not ok:
         return []
     pattern = re.compile(re.escape(old.encode("ascii")), re.I)
     refs = []
     for path in sorted({item for item in out.split("\0") if item.strip()}):
-        if path == meta_path:
+        if path in skip:
             continue
         absolute = os.path.join(root, path)
         if not os.path.isfile(absolute) or os.path.getsize(absolute) > MAX_REF_BYTES:
@@ -120,10 +137,11 @@ def scan(root: str) -> dict:
             item["kind"] = "import"
         else:
             item["kind"] = "guid"
-            commit = last_guid_commit(root, path)
+            commit = dup_guid_commit(root, path, old)
             item["commit"] = commit
-            item["refs"] = guid_refs(root, commit["hash"], path, old, dirty) if commit else []
-            skip = {path} | {ref["path"] for ref in item["refs"]}
+            own = {path} | set(commit.get("dup_paths") or [])
+            item["refs"] = guid_refs(root, commit["hash"], own, old, dirty) if commit else []
+            skip = own | {ref["path"] for ref in item["refs"]}
             item["others"] = other_refs(root, old, skip)
         items.append(item)
     return {"items": items}
@@ -160,12 +178,12 @@ def commit_imports(root: str, paths: list | None = None) -> dict:
 
 
 def fix_guid(root: str, path: str) -> dict:
-    """把最近改这个 meta guid 的提交里引用旧 guid 的文件换成本地新 guid，和 meta 一起提交。"""
+    """把最近提交了重复 guid 的那次提交里引用旧 guid 的文件换成本地新 guid，和 meta 一起提交。"""
     item = next((row for row in scan(root)["items"] if row["path"] == path), None)
     if not item or item["kind"] != "guid":
         raise ValueError("这个 meta 现在不是 guid 改动，重新检查一下。")
     if not item.get("commit"):
-        raise ValueError("找不到改过这个 meta guid 的提交。")
+        raise ValueError("找不到别的 meta 用了同一个 guid 的提交。")
     old, new = item["old_guid"], item["new_guid"]
     pattern = re.compile(re.escape(old.encode("ascii")), re.I)
     changed = []
@@ -177,7 +195,8 @@ def fix_guid(root: str, path: str) -> dict:
                 handle.write(replaced)
             changed.append(ref["path"])
     name = os.path.basename(path)[:-5]
-    message = (f"{name} guid 用本地的 {new}（{item['commit']['short']} 里是 {old}），"
+    dups = "、".join(os.path.basename(dup)[:-5] for dup in item["commit"]["dup_paths"])
+    message = (f"{name} guid 和 {dups} 重复（{old}，{item['commit']['short']}），用本地的 {new}，"
                f"替换 {len(changed)} 个引用")
     try:
         short = commit(root, message, [path] + changed)

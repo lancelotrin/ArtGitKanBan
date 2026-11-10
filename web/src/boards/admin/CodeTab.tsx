@@ -165,7 +165,7 @@ function BombSection() {
         <div className="row" style={{ marginTop: 8 }}><ActionButton label="保存群" done="已保存" run={saveList("groups", resetGroups)} /></div>
       </div>
       <div className="sub">
-        <label>提醒忽略这些路径（一行一个前缀；匹配到的文件不发提醒，整条只剩忽略路径时整条不发。炸线看板仍显示完整结果。）</label>
+        <label>提醒忽略这些路径（一行一个目录前缀，可以只写路径中间的一段，如 StreamingAssets/Battle/；匹配到的文件不发提醒，整条只剩忽略路径时整条不发。炸线看板仍显示完整结果。）</label>
         <textarea placeholder={"BattleLibrary/output/\nAssets/DataTable/"} style={{ minHeight: 64 }} value={ignore} onChange={(e) => setIgnore(e.target.value)} />
         <div className="row" style={{ marginTop: 8 }}><ActionButton label="保存忽略路径" done="已保存" run={saveList("ignore_paths", resetIgnore)} /></div>
       </div>
@@ -193,8 +193,11 @@ function GuidItem({ item, onDone }: { item: MetaItem; onDone: (result: MetaResul
       <div><code>{item.path}</code></div>
       <div className="meta">提交里是 <code>{item.old_guid}</code>，本地是 <code>{item.new_guid}</code></div>
       {commit?.hash ? (
-        <div className="meta">最近改这个 guid 的提交：{commit.short} {commit.author} {commit.date} {commit.subject}</div>
-      ) : <div className="bad">找不到改过这个 guid 的提交，不能自动处理。</div>}
+        <>
+          <div className="meta">旧 guid 和这些 meta 重复：{commit.dup_paths.map((dup) => <code key={dup}>{dup} </code>)}</div>
+          <div className="meta">最近提交重复 guid 的：{commit.short} {commit.author} {commit.date} {commit.subject}</div>
+        </>
+      ) : <div className="bad">找不到别的 meta 用了同一个旧 guid 的提交，不能自动处理。</div>}
       {refs.length ? (
         <ul className="meta">
           {refs.map((ref) => (
@@ -235,7 +238,7 @@ function MetaSection() {
     <section id="sec-meta">
       <h2>meta 改动</h2>
       <p className="meta">
-        查工作区里本地改过的 <code>.meta</code>。guid 没变（只改了导入设置）的直接提交；guid 变了的，找最近一次改这个 meta guid 的提交，
+        查工作区里本地改过的 <code>.meta</code>。guid 没变（只改了导入设置）的直接提交；guid 变了的，按旧 guid 找最近一次提交了「别的 meta 也用这个 guid」的提交（和路径无关），
         把那次提交里引用旧 guid 的文件换成本地的新 guid，再和 meta 一起提交。只 commit 不 push。「拉代码」会清掉本地修改，先处理完再拉。
       </p>
       <div className="row">

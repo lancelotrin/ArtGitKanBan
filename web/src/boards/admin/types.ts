@@ -85,7 +85,7 @@ export interface WishAdmin {
 export interface Account { open_id: string; name: string; department?: string; role: string; first_login: string; last_login: string }
 export interface Bilibili { set?: boolean; login?: boolean; uname?: string; message?: string }
 
-export interface MetaCommit { hash: string; short: string; author: string; date: string; subject: string }
+export interface MetaCommit { hash: string; short: string; author: string; date: string; subject: string; dup_paths: string[] }
 export interface MetaItem {
   path: string;
   kind: "import" | "guid" | "unknown";
