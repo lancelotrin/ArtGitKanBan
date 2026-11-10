@@ -128,11 +128,15 @@ class ReviewTests(unittest.TestCase):
         self.snapshot["files"][0].update({"replay_from": "b" * 40, "replay_commits": ["abc1234", "def5678"]})
         self.vote("Alice", "both", comment="留住新字段")
         with urlopen(self.url + "/api/export.csv") as response:
-            rows = response.read().decode("utf-8-sig").splitlines()
+            rows = response.read().decode("utf-8-sig").splitlines()[1:]
+        self.assertTrue(response.headers and rows[0].startswith("snapshot,path,choice"))
         self.assertEqual(rows[1], "test-snapshot,example.cs,both,,,留住新字段,," + ",".join(["o" * 40, "b" * 40, "t" * 40]) + ",abc1234 def5678")
         self.vote("Bob", "ours")
         with urlopen(self.url + "/api/export.csv") as response:
-            row = response.read().decode("utf-8-sig").splitlines()[1]
+            text = response.read().decode("utf-8-sig")
+            self.assertTrue(text.lstrip('"').startswith('# 合并冲突处理说明'))
+            self.assertIn("git show " + "o" * 40 + ":<path>", text.splitlines()[0])
+            row = text.splitlines()[2]
         self.assertTrue(row.startswith("test-snapshot,example.cs,ours,code,Bob,") and row.endswith(",,,,"))
 
     def test_export_and_cross_origin(self):

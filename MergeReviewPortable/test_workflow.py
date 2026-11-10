@@ -85,6 +85,7 @@ class WorkflowTests(unittest.TestCase):
         snapshot = review.read(session / "snapshot.json")
         path = self.root / "choices.csv"
         with path.open("w", encoding="utf-8", newline="") as stream:
+            csv.writer(stream).writerow(["# 处理说明, 含逗号也要被 plan 跳过"])  # 同导出 CSV 的第一行
             writer = csv.DictWriter(stream, fieldnames=["snapshot", "path", "choice", "reviewer", "comment"])
             writer.writeheader()
             for name, choice in choices.items():

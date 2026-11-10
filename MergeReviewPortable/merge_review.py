@@ -311,7 +311,14 @@ def plan_session(session, csv_path=None):
     choices = {}
     if csv_path:
         with Path(csv_path).open(encoding="utf-8-sig", newline="") as stream:
-            reader = csv.DictReader(stream)
+            def rows(lines):  # 跳过表头前以 # 开头的说明行（导出 CSV 第一行是处理说明）
+                lines = iter(lines)
+                for line in lines:
+                    if not line.lstrip('"').startswith("#"):
+                        yield line
+                        break
+                yield from lines
+            reader = csv.DictReader(rows(stream))
             if not {"snapshot", "path", "choice"} <= set(reader.fieldnames or []):
                 raise ReviewError("CSV 缺少 snapshot/path/choice 列。")
             for row in reader:

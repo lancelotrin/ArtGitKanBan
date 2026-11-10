@@ -13,6 +13,15 @@ from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parent
 CHOICES = {"ours", "theirs", "both"}
+# 导出 CSV 的第一行（单个单元格，以 # 开头；merge_review.py plan 读 CSV 时会跳过）。
+CSV_GUIDE = ("# 合并冲突处理说明（第二行起是表头和数据，每行一个冲突文件）：当前分支提交 {ours}，合入分支提交 {theirs}；"
+             "ours=用当前分支版本：内容取 git show {ours}:<path>（一般等同 git checkout --ours -- <path>；涉及重命名时以同路径对象为准；base 里没有该文件则 git rm <path>），合入分支对它的修改全部丢弃；"
+             "theirs=用合入分支版本：内容取 git show {theirs}:<path>（一般等同 git checkout --theirs -- <path>；合入分支没有该文件则 git rm <path>），当前分支对它的修改全部丢弃；"
+             "both=以 base（当前分支）版本为基底，按顺序 git show <replay_commits 里的提交> -- <path> 查看合入分支的修改，"
+             "只把有效修改重放到基底上：已包含的不重复，当前分支有意删除或重构的不复活，重叠内容/业务歧义列出差异问人；"
+             "二进制或生成物不能拼接，需理解修改后人工整合或重新生成；replay_commits 为空时看 git diff <replay_from> <replay_to> -- <path>；"
+             "pending=未选择，按 both 处理（合入分支无同路径历史的已在导出时写成 ours）；"
+             "每个文件处理完确认无冲突标记后 git add <path>；comment 列是评审备注，处理时要遵守；只处理本 CSV 列出的路径，不提交、不推送。")
 
 
 class ReviewServer(ThreadingHTTPServer):
@@ -128,6 +137,7 @@ def make_handler(snapshot, db_path):
             if route == "/api/export.csv":
                 out = io.StringIO(newline="")
                 writer = csv.writer(out)
+                writer.writerow([CSV_GUIDE.format(ours=snapshot.get("ours") or "HEAD", theirs=snapshot.get("theirs") or "MERGE_HEAD")])  # 第一行：各选项怎么处理，新会话拿到 CSV 就知道怎么解冲突
                 # both / pending（默认 both）只留新 AI 会话重放要用的：以 base（当前分支）为基底，
                 # 重放 replay_from..replay_to 之间触及该路径的 replay_commits；分类、修改人、时间不导出。
                 writer.writerow(["snapshot", "path", "choice", "category", "reviewer", "comment", "updated_at",
