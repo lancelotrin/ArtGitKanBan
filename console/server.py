@@ -494,7 +494,7 @@ def _reply(payload, status: int = 200) -> tuple:
 
 
 def meta_action(action: str, data: dict | None = None) -> tuple:
-    """本地 .meta 改动：scan 只读；commit_imports / fix_guid 会提交（不推送），和拉代码、切分支共用锁。"""
+    """本地 .meta 改动：scan 只读；apply_all 全部处理并提交（不推送），和拉代码、切分支共用锁。"""
     from bot import echo_bot, meta_fix
     data = data or {}
     root = echo_bot.get_git_root()
@@ -503,19 +503,12 @@ def meta_action(action: str, data: dict | None = None) -> tuple:
             return _reply(dict(meta_fix.scan(root), root=root))
         except RuntimeError as error:
             return _reply({"error": str(error)}, 400)
-    if action not in ("commit_imports", "fix_guid"):
+    if action != "apply_all":
         return _reply({"error": "不认识的操作。"}, 400)
     if not echo_bot._pull_lock.acquire(blocking=False):
         return _reply({"error": "正在拉代码或切分支，等它做完再提交。"}, 400)
     try:
-        if action == "commit_imports":
-            paths = [str(item) for item in data.get("paths") or [] if str(item).strip()]
-            result = meta_fix.commit_imports(root, paths)
-        else:
-            path = str(data.get("path") or "").strip()
-            if not path:
-                raise ValueError("填要处理的 meta 路径。")
-            result = meta_fix.fix_guid(root, path)
+        result = meta_fix.apply_all(root)
     except (ValueError, RuntimeError, OSError) as error:
         return _reply({"error": str(error)}, 400)
     finally:

@@ -27,20 +27,26 @@ class MetaFixTest(unittest.TestCase):
         self.run_git("init", "-q", "-b", "main")
         self.run_git("config", "user.name", "tester")
         self.run_git("config", "user.email", "tester@example.com")
-        self.write("Assets/old.prefab", f"m_Material: {{fileID: 2100000, guid: {OLD}, type: 2}}\n")
+        # 之前的资源用 OLD，old.prefab 引用它
         self.write("Assets/hero.mat.meta", meta(OLD))
+        self.write("Assets/old.prefab", f"m_Material: {{fileID: 2100000, guid: {OLD}, type: 2}}\n")
         self.write("Assets/tex.png.meta", meta(TEX))
-        self.commit("我的资源")
+        self.write("Assets/hero_b.prefab", f"c: {{guid: {TEX}}}\n")
+        self.commit("之前的资源")
         # 别人在另一个目录提交了不同名字的资源，meta 拷过来 guid 也是 OLD，并有预制体引用它
         self.write("Assets/Other/copy.mat.meta", meta(OLD))
-        self.write("Assets/hero_a.prefab", f"a: {{guid: {OLD}}}\nb: {{guid: {OLD.upper()}}}\n")
-        self.write("Assets/hero_b.prefab", f"c: {{guid: {TEX}}}\n")
+        self.write("Assets/hero_a.prefab", f"a: {{guid: {OLD}}}\nb: {{guid: {OLD}}}\n")
         self.commit("guid 重复的提交")
+        # 之后又有人引用了 OLD；old.prefab 改了别的内容，但它在重复提交前就引用了
+        self.write("Assets/later.prefab", f"d: {{guid: {OLD}}}\n")
+        self.write("Assets/old.prefab", f"m_Material: {{fileID: 2100000, guid: {OLD}, type: 2}}\nx: 1\n")
         self.write("Assets/later.txt", "later\n")
         self.commit("后来的提交")
-        # 本地：Unity 给 hero.mat.meta 换了新 guid，tex.png.meta 只改导入设置，还有一个非 meta 的本地修改
+        # 本地：Unity 给 hero.mat.meta 换了新 guid，tex.png.meta 只改导入设置，
+        # hero_b.prefab 本地新加了对 OLD 的引用，还有一个非 meta 的本地修改
         self.write("Assets/hero.mat.meta", meta(NEW))
         self.write("Assets/tex.png.meta", meta(TEX).replace("2048", "1024"))
+        self.write("Assets/hero_b.prefab", f"c: {{guid: {TEX}}}\ne: {{guid: {OLD}}}\n")
         self.write("Assets/later.txt", "dirty\n")
 
     def tearDown(self) -> None:
@@ -72,50 +78,52 @@ class MetaFixTest(unittest.TestCase):
         self.assertEqual((guid["old_guid"], guid["new_guid"]), (OLD, NEW))
         self.assertEqual(guid["commit"]["subject"], "guid 重复的提交")
         self.assertEqual(guid["commit"]["dup_paths"], ["Assets/Other/copy.mat.meta"])
-        self.assertEqual(guid["refs"], [{"path": "Assets/hero_a.prefab", "count": 2, "dirty": False}])
-        self.assertEqual(guid["others"], {"done": True, "paths": ["Assets/old.prefab"]})
+        self.assertTrue(guid["grep_done"])
+        refs = {ref["path"]: ref for ref in guid["refs"]}
+        self.assertEqual(set(refs), {"Assets/hero_a.prefab", "Assets/later.prefab", "Assets/old.prefab",
+                                     "Assets/hero_b.prefab"})
+        self.assertTrue(refs["Assets/hero_a.prefab"]["replace"])
+        self.assertEqual(refs["Assets/hero_a.prefab"]["count"], 2)
+        self.assertTrue(refs["Assets/later.prefab"]["replace"])
+        self.assertFalse(refs["Assets/old.prefab"]["replace"])
+        self.assertEqual(refs["Assets/old.prefab"]["since"]["short"],
+                         self.run_git("rev-parse", "--short", "HEAD~2").strip())
+        self.assertFalse(refs["Assets/hero_b.prefab"]["replace"])
 
-    def test_commit_imports_only_those(self) -> None:
-        result = meta_fix.commit_imports(self.root)
-        self.assertEqual(result["paths"], ["Assets/tex.png.meta"])
-        self.assertEqual(self.run_git("show", "--name-only", "--format=", "HEAD").split(), ["Assets/tex.png.meta"])
-        status = self.run_git("status", "--porcelain")
-        self.assertIn("Assets/later.txt", status)
-        self.assertIn("Assets/hero.mat.meta", status)
-        with self.assertRaises(ValueError):
-            meta_fix.commit_imports(self.root, ["Assets/hero.mat.meta"])
-
-    def test_fix_guid(self) -> None:
-        result = meta_fix.fix_guid(self.root, "Assets/hero.mat.meta")
+    def test_apply_all(self) -> None:
+        result = meta_fix.apply_all(self.root)
         self.assertEqual(sorted(self.run_git("show", "--name-only", "--format=", "HEAD").split()),
-                         ["Assets/hero.mat.meta", "Assets/hero_a.prefab"])
+                         ["Assets/hero.mat.meta", "Assets/hero_a.prefab", "Assets/later.prefab", "Assets/tex.png.meta"])
         self.assertEqual(self.read("Assets/hero_a.prefab"), f"a: {{guid: {NEW}}}\nb: {{guid: {NEW}}}\n")
-        self.assertIn(OLD, self.read("Assets/old.prefab"))  # 不在那次提交里，只报不改
+        self.assertEqual(self.read("Assets/later.prefab"), f"d: {{guid: {NEW}}}\n")
+        self.assertIn(OLD, self.read("Assets/old.prefab"))
+        self.assertIn(OLD, self.read("Assets/hero_b.prefab"))
         self.assertIn(OLD, self.read("Assets/Other/copy.mat.meta"))  # 重复的 meta 自己不动
-        self.assertIn("还有 1 个", result["message"])
+        self.assertIn("2 个文件在重复提交之前", result["message"])
         status = self.run_git("status", "--porcelain")
         self.assertIn("Assets/later.txt", status)
-        self.assertIn("Assets/tex.png.meta", status)
+        self.assertIn("Assets/hero_b.prefab", status)
         with self.assertRaises(ValueError):
-            meta_fix.fix_guid(self.root, "Assets/tex.png.meta")
+            meta_fix.apply_all(self.root)
 
     def test_guid_changed_without_duplicate(self) -> None:
         self.write("Assets/tex.png.meta", meta(NEW))
         item = next(row for row in meta_fix.scan(self.root)["items"] if row["path"] == "Assets/tex.png.meta")
         self.assertEqual(item["kind"], "guid")
         self.assertEqual(item["commit"], {})
-        with self.assertRaises(ValueError):
-            meta_fix.fix_guid(self.root, "Assets/tex.png.meta")
+        result = meta_fix.apply_all(self.root)
+        self.assertIn("tex.png.meta", result["message"])
+        self.assertNotIn("Assets/tex.png.meta", self.run_git("show", "--name-only", "--format=", "HEAD").split())
 
     def test_console_actions(self) -> None:
         with mock.patch("bot.echo_bot.get_git_root", return_value=self.root):
             status, payload = console.admin_get("/api/meta", {})
             self.assertEqual(status, 200)
             self.assertEqual(len(payload["items"]), 2)
-            status, payload = console.admin_post("/api/meta", {"action": "commit_imports"}, {})
+            status, payload = console.admin_post("/api/meta", {"action": "apply_all"}, {})
             self.assertEqual(status, 200, payload)
-            self.assertEqual([item["path"] for item in payload["scan"]["items"]], ["Assets/hero.mat.meta"])
-            status, payload = console.admin_post("/api/meta", {"action": "fix_guid", "path": "Assets/nope.meta"}, {})
+            self.assertEqual(payload["scan"]["items"], [])
+            status, payload = console.admin_post("/api/meta", {"action": "apply_all"}, {})
             self.assertEqual(status, 400)
 
 
