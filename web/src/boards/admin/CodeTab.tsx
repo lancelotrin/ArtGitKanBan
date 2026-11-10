@@ -245,35 +245,54 @@ function GuidItem({ item }: { item: MetaItem }) {
 
 function MetaSection() {
   const [scan, setScan] = useState<MetaScan>();
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState<{ text: string; bad?: boolean }>({ text: "" });
+  const [busy, setBusy] = useState("");
+  const { data: logData, refetch: refetchLog } = useAdmin<{ log: string }>("meta_log", false);
   const imports = scan?.items.filter((item) => item.kind === "import") || [];
   const guids = scan?.items.filter((item) => item.kind === "guid") || [];
   const fixable = guids.filter((item) => (item.commit as MetaCommit | undefined)?.hash && item.grep_done);
   const unknown = scan?.items.filter((item) => item.kind === "unknown") || [];
   const files = fixable.reduce((sum, item) => sum + (item.refs || []).filter((ref) => ref.replace).length, 0);
+  // 不弹窗：结果写进下面的日志框和这一行提示。
+  const run = (name: string, work: () => Promise<void>) => async () => {
+    setBusy(name);
+    try {
+      await work();
+    } catch (error) {
+      setMessage({ text: (error as Error).message || "没完成", bad: true });
+    } finally {
+      setBusy("");
+      await refetchLog();
+    }
+  };
+  const check = run("check", async () => {
+    setScan(await api<MetaScan>("/admin/meta"));
+    setMessage({ text: "" });
+  });
+  const applyAll = run("apply", async () => {
+    const result = await api<MetaResult>("/admin/meta", { method: "POST", body: JSON.stringify({ action: "apply_all" }) });
+    setMessage({ text: result.message || "", bad: result.ok === false });
+    if (result.scan) setScan(result.scan);
+  });
   return (
     <section id="sec-meta">
       <h2>meta 改动</h2>
       <p className="meta">
-        查工作区里本地改过的 <code>.meta</code>。guid 没变（只改了导入设置）的直接提交；guid 变了的，按旧 guid 找最近一次提交了「别的 meta 也用这个 guid」的提交（重复提交，和路径无关）。
-        引用旧 guid 的文件，在重复提交及之后开始引用的换成本地新 guid；重复提交之前就引用的是之前那个资源的，不动。全部一次提交，只 commit 不 push。「拉代码」会清掉本地修改，先处理完再拉。
+        查工作区里本地改过的 <code>.meta</code>。guid 没变（只改了导入设置）的直接提交；guid 变了的，找工作区里也用这个旧 guid 的别的 meta（和路径无关），
+        两边里后拿到这个 guid 的提交是重复提交。本地这个是后来的，就把重复提交及之后开始的引用换成本地新 guid，之前的是之前那个资源的，不动。
+        全部一次提交，只 commit 不 push，结果写在下面的日志里。「拉代码」会清掉本地修改，先处理完再拉。
       </p>
       <div className="row">
-        <ActionButton label="检查" done="已检查" run={async () => {
-          setScan(await api<MetaScan>("/admin/meta"));
-          setMessage("");
-        }} />
+        <button type="button" disabled={!!busy} onClick={check}>{busy === "check" ? "检查中…" : "检查"}</button>
         {scan && (imports.length > 0 || fixable.length > 0) && (
-          <ActionButton className="primary" done="已提交"
-            label={`全部处理并提交（导入设置 ${imports.length} 个，guid ${fixable.length} 个，换 ${files} 个文件）`}
-            run={async () => {
-              const result = await adminPost<MetaResult>("meta", { action: "apply_all" });
-              setMessage(result.message || "");
-              if (result.scan) setScan(result.scan);
-            }} />
+          <button type="button" className="primary" disabled={!!busy} onClick={applyAll}>
+            {busy === "apply" ? "处理中…" : `全部处理并提交（导入设置 ${imports.length} 个，guid ${fixable.length} 个，换 ${files} 个文件）`}
+          </button>
         )}
       </div>
-      <p className="meta">{message}</p>
+      <p className="meta">{message.bad ? <span className="bad">{message.text}</span> : message.text}</p>
+      <label>日志</label>
+      <pre className="meta" style={{ maxHeight: 240, overflow: "auto", whiteSpace: "pre-wrap" }}>{logData?.log || "还没有记录。"}</pre>
       {scan?.seconds !== undefined && (
         <div className="meta">
           检查用时 {scan.seconds} 秒{scan.timing && Object.keys(scan.timing).length

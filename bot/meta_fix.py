@@ -278,9 +278,26 @@ def apply_all(root: str) -> dict:
     kept = sum(1 for item in fixable for ref in item["refs"] if not ref["replace"])
     text = f"已提交（{short}），没推送：" + "；".join(parts) + "。"
     if kept:
-        text += f"有 {kept} 个文件在重复提交之前就引用旧 guid，没改。"
+        text += f"有 {kept} 个引用旧 guid 的文件没改。"
     if skipped:
-        text += f"{len(skipped)} 个 meta 没处理：" + "、".join(os.path.basename(path) for path in skipped)
+        text += f"{len(skipped)} 个 meta 没处理。"
+    details = [text]
+    for path in imports:
+        details.append(f"  提交导入设置 {path}")
+    for item in fixable:
+        commit_info = item["commit"]
+        side = "本地这个是后来的" if commit_info.get("mine_later") else "本地这个是之前的"
+        details.append(f"  guid 重复 {item['path']}：{item['old_guid']} → {item['new_guid']}，"
+                       f"重复提交 {commit_info['short']} {commit_info['author']} {commit_info['date']}（{side}）")
+        for ref in item["refs"]:
+            if ref["replace"]:
+                state = "已换" if ref["path"] in changed else "没换到"
+                details.append(f"    {state} {ref['path']}（{ref['count']} 处）")
+            else:
+                details.append(f"    不动 {ref['path']}：{ref['reason']}")
+    for item in items:
+        if item["path"] in skipped:
+            details.append(f"  没处理 {item['path']}：{item.get('note') or '没查完引用'}")
     done = set(imports) | {item["path"] for item in fixable}
     remaining = {"items": [item for item in items if item["path"] not in done]}
-    return {"ok": True, "commit": short, "paths": paths, "message": text, "scan": remaining}
+    return {"ok": True, "commit": short, "paths": paths, "message": text, "details": details, "scan": remaining}

@@ -493,34 +493,61 @@ def _reply(payload, status: int = 200) -> tuple:
     return status, payload
 
 
+META_LOG_PATH = os.path.join(DATA_DIR, "meta_fix.log")
+
+
+def meta_log(lines: list) -> None:
+    """meta 处理日志单独一个文件（bot.log 是大豆进程在写），网页「meta 改动」里显示。"""
+    stamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        with open(META_LOG_PATH, "a", encoding="utf-8") as handle:
+            for index, line in enumerate(lines):
+                handle.write((f"[{stamp}] " if index == 0 else "") + line + "\n")
+    except OSError:
+        pass
+
+
+def meta_log_text(count: int = 200) -> str:
+    try:
+        with open(META_LOG_PATH, encoding="utf-8", errors="replace") as handle:
+            return "\n".join(handle.read().splitlines()[-count:])
+    except OSError:
+        return ""
+
+
 def meta_action(action: str, data: dict | None = None) -> tuple:
-    """本地 .meta 改动：scan 只读；apply_all 全部处理并提交（不推送），和拉代码、切分支共用锁。"""
+    """本地 .meta 改动：scan 只读；apply_all 全部处理并提交（不推送），和拉代码、切分支共用锁。结果都写进 meta 日志。"""
     from bot import echo_bot, meta_fix
-    data = data or {}
     root = echo_bot.get_git_root()
     if action == "scan":
         try:
             view = meta_fix.scan(root)
-            echo_bot.log(f"[meta] scan {len(view['items'])} 个 meta，{view['seconds']}s {view['timing']}")
-            return _reply(dict(view, root=root))
         except RuntimeError as error:
-            return _reply({"error": str(error)}, 400)
+            meta_log([f"检查失败：{error}"])
+            return _reply({"error": str(error), "log": meta_log_text()}, 400)
+        kinds = [item["kind"] for item in view["items"]]
+        timing = "，".join(f"{name} {sec} 秒" for name, sec in view["timing"].items())
+        meta_log([f"检查 {root}：导入设置 {kinds.count('import')} 个，guid 变了 {kinds.count('guid')} 个，"
+                  f"读不到 guid {kinds.count('unknown')} 个，用时 {view['seconds']} 秒（{timing}）"])
+        return _reply(dict(view, root=root, log=meta_log_text()))
     if action != "apply_all":
         return _reply({"error": "不认识的操作。"}, 400)
     if not echo_bot._pull_lock.acquire(blocking=False):
-        return _reply({"error": "正在拉代码或切分支，等它做完再提交。"}, 400)
+        meta_log(["没处理：正在拉代码或切分支。"])
+        return _reply({"ok": False, "message": "正在拉代码或切分支，等它做完再处理。", "log": meta_log_text()})
     try:
         result = meta_fix.apply_all(root)
     except (ValueError, RuntimeError, OSError) as error:
-        return _reply({"error": str(error)}, 400)
+        meta_log([f"处理失败：{error}"])
+        return _reply({"ok": False, "message": str(error), "log": meta_log_text()})
     finally:
         echo_bot._pull_lock.release()
     _branch_cache["at"] = 0.0
     with _status_lock:
         _status_cache["at"] = 0.0
         _status_cache["data"] = None
-    echo_bot.log(f"[meta] {result.get('commit')} {result.get('message')}")
-    return _reply(result)
+    meta_log(result.pop("details"))
+    return _reply(dict(result, log=meta_log_text()))
 
 
 def admin_get(path: str, user: dict) -> tuple:
@@ -539,6 +566,8 @@ def admin_get(path: str, user: dict) -> tuple:
         return _reply(models_view())
     if path == "/api/meta":
         return meta_action("scan")
+    if path == "/api/meta_log":
+        return _reply({"log": meta_log_text()})
     if path == "/api/bilibili":
         from bot import echo_bot
         view = echo_bot.bilibili_login_status()
