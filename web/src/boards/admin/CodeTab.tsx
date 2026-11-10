@@ -120,8 +120,8 @@ function BombSection() {
   const [ignore, setIgnore, resetIgnore] = useSynced(data?.ignore_paths?.join("\n"), "");
   const [message, setMessage] = useState<{ text: string; bad?: boolean }>({ text: "" });
   const act = (action: string) => async () => {
-    const data = await adminPost<BombAdmin>("bomb", { action, minutes: Number(minutes || 30), days: Number(days || 2) });
-    setMessage({ text: data.message || "" });
+    const data = await adminPost<BombAdmin & { ok?: boolean }>("bomb", { action, minutes: Number(minutes || 30), days: Number(days || 2) });
+    setMessage({ text: data.message || "", bad: data.ok === false });
   };
   const saveList = (action: "groups" | "ignore_paths", reset: () => void) => async () => {
     try {
@@ -137,7 +137,7 @@ function BombSection() {
   return (
     <section id="sec-bomb">
       <h2>炸线提醒</h2>
-      <p className="meta">扫上面「查询分支」最近几天的合并：谁合并丢了谁的修改、现在补回没有，以及强推。新的会私聊朱辉并发到提醒群，报过的不重复报。结果是「疑似」，请当事人确认。</p>
+      <p className="meta">扫上面「查询分支」最近几天的合并：谁合并丢了谁的修改、现在补回没有，以及强推。新的会私聊朱辉并发到提醒群，报过的不重复报。结果是「疑似」，请当事人确认。关闭后完全不查：不自动查、不能手动查、问大豆也不查，每日复盘里也不带炸线。</p>
       {!data ? <div>正在读取…</div> : (
         <div>
           <OnOff on={data.enabled} />

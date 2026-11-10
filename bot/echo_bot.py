@@ -3214,7 +3214,17 @@ def alert_bomb_results(results: list, ignore_paths: list = None) -> tuple:
     return alerted, dropped
 
 
+BOMB_OFF_TEXT = "炸线检查已关闭，不查了。要查的话在大豆后台「炸线提醒」里打开。"
+
+
+def bomb_enabled() -> bool:
+    """炸线检查总开关：关了以后自动查、手动查、问大豆、启动补历史、每日复盘里的炸线都不跑。"""
+    return bomb_settings(load_bomb_state())[0]
+
+
 def answer_bomb(text: str) -> str:
+    if not bomb_enabled():
+        return BOMB_OFF_TEXT
     days = bomb.parse_days(text)
     branches = bomb.parse_branches(text, list(GIT_BRANCHES))
     label = "今天" if days == 0 else ("昨天到现在" if days == 1 else f"最近 {days} 天")
@@ -3321,8 +3331,13 @@ def control_bomb(action: str, minutes=None, days=None, groups_text: str = "", ig
             if days is not None:
                 state["days"] = min(max(int(days), 1), bomb.MAX_DAYS)
             state["next_at"] = ""
-            message = "已开启，大约一分钟内先查一次。" if action == "on" else "已关闭，不再自动查。问「今天有没有炸线」仍然能查。"
+            if action == "off":
+                state["run_requested"] = False
+            message = ("已开启，大约一分钟内先查一次。" if action == "on" else
+                       "已关闭，完全不查了：不自动查、不能手动查，问大豆也不查，每日复盘里也不带炸线。")
         elif action == "now":
+            if not bomb_settings(state)[0]:
+                return dict(bomb_view(), ok=False, message="炸线检查关着，先点「开启 / 保存」再查。")
             state["run_requested"] = True
             message = "已排队，一分钟内查一次。有新的会私聊朱辉并发到群里。"
         else:
@@ -3416,7 +3431,7 @@ def record_bomb_history(results: list, told, backfill: bool = False) -> None:
 
 def backfill_bomb_history() -> None:
     """看板第一次上线时补最近 7 天，之后不再补。"""
-    if not bomb_board.needs_backfill():
+    if not bomb_enabled() or not bomb_board.needs_backfill():
         return
     results, scanned, note = scan_bomb(list(GIT_BRANCHES), bomb.MAX_DAYS)
     record_bomb_history(results, load_bomb_state().get("told"), backfill=True)
@@ -3435,7 +3450,12 @@ def bomb_loop() -> None:
             now = datetime.datetime.now(BEIJING_TZ)
             next_at = state.get("next_at") or ""
             due = enabled and (not next_at or next_at <= now.isoformat(timespec="seconds"))
-            if state.get("run_requested") or due:
+            if state.get("run_requested") and not enabled:  # 关着时排的队不跑，直接清掉
+                with _bomb_lock:
+                    state = load_bomb_state()
+                    state["run_requested"] = False
+                    save_bomb_state(state)
+            elif state.get("run_requested") or due:
                 run_bomb_once(days)
                 with _bomb_lock:
                     state = load_bomb_state()
@@ -3935,7 +3955,7 @@ def generate_daily_reviews(day: datetime.date, notify: bool = True) -> str:
     since, _until = review_day_bounds(day)
     day_key = f"{day:%m-%d}"
     day_merges = []
-    for branch in GIT_BRANCHES:
+    for branch in (GIT_BRANCHES if bomb_enabled() else ()):  # 炸线检查关着就不扫合并，复盘里不带炸线
         merges, _count = bomb.scan_merges(bomb_git, git_ref(branch), since)
         day_merges.append((branch, [item for item in merges if item["date"].startswith(day_key)]))
     base = review_web_base()
