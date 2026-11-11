@@ -154,20 +154,20 @@ class MetaFixTest(unittest.TestCase):
         log_path = os.path.join(self.root, "meta_fix.log")
         with mock.patch("bot.echo_bot.get_git_root", return_value=self.root), \
                 mock.patch.object(console, "META_LOG_PATH", log_path):
-            status, payload = console.admin_get("/api/meta", {})
+            status, payload = console.meta_action("scan")
             self.assertEqual(status, 200)
             self.assertEqual(len(payload["items"]), 2)
             self.assertIn("guid 变了 1 个", payload["log"])
-            status, payload = console.admin_post("/api/meta", {"action": "apply_all"}, {})
+            status, payload = console.meta_action("apply_all")
             self.assertEqual(status, 200, payload)
             self.assertEqual(payload["scan"]["items"], [])
             self.assertNotIn("details", payload)
-            log = console.admin_get("/api/meta_log", {})[1]["log"]
+            log = console.meta_log_text()
             self.assertIn("提交导入设置 Assets/tex.png.meta", log)
             self.assertIn("已换 Assets/hero_a.prefab（2 处）", log)
             self.assertIn("不动 Assets/old.prefab：重复提交之前就引用了", log)
             # 失败不报错码，写进日志
-            status, payload = console.admin_post("/api/meta", {"action": "apply_all"}, {})
+            status, payload = console.meta_action("apply_all")
             self.assertEqual(status, 200)
             self.assertFalse(payload["ok"])
             self.assertIn("处理失败：没有能处理的 meta。", payload["log"])

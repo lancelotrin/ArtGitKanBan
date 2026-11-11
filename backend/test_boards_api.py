@@ -4,9 +4,12 @@
 """
 import json
 import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+
+from unittest import mock
 
 from fastapi.testclient import TestClient
 
@@ -106,7 +109,36 @@ class BoardsApiTest(unittest.TestCase):
     def test_me_and_sites(self) -> None:
         self.assertEqual(self.user.get("/api/v1/me").json()["role"], "user")
         sites = self.user.get("/api/v1/sites").json()["sites"]
-        self.assertEqual([s["port"] for s in sites], ["/review", "/wish", "/bomb", "/merge", "/chat", "/docwatch", "/help"])
+        self.assertEqual([s["port"] for s in sites], ["/review", "/wish", "/bomb", "/merge", "/chat", "/docwatch", "/help", "/meta"])
+
+    # ---------- meta 检查 ----------
+
+    def test_meta(self) -> None:
+        repo = os.path.join(self.tmp.name, "repo")
+        os.makedirs(os.path.join(repo, "Assets"))
+        git = lambda *args: subprocess.run(["git", "-C", repo, *args], check=True, capture_output=True)
+        git("init", "-q", "-b", "main")
+        git("config", "user.name", "tester")
+        git("config", "user.email", "tester@example.com")
+        meta_path = os.path.join(repo, "Assets", "a.png.meta")
+        with open(meta_path, "w", encoding="utf-8") as handle:
+            handle.write("fileFormatVersion: 2\nguid: " + "a" * 32 + "\nmaxTextureSize: 2048\n")
+        git("add", "-A")
+        git("commit", "-q", "-m", "init")
+        with open(meta_path, "w", encoding="utf-8") as handle:
+            handle.write("fileFormatVersion: 2\nguid: " + "a" * 32 + "\nmaxTextureSize: 1024\n")
+        with mock.patch("bot.echo_bot.get_git_root", return_value=repo), \
+                mock.patch.object(console, "META_LOG_PATH", os.path.join(self.tmp.name, "meta_fix.log")):
+            data = self.user.get("/api/v1/meta").json()
+            self.assertEqual([(item["kind"], item["path"]) for item in data["items"]], [("import", "Assets/a.png.meta")])
+            self.assertIn("导入设置 1 个", self.user.get("/api/v1/meta/log").json()["log"])
+            self.assertEqual(self.user.post("/api/v1/meta/apply").status_code, 403)
+            data = self.admin.post("/api/v1/meta/apply").json()
+            self.assertTrue(data["ok"])
+            self.assertEqual(data["scan"]["items"], [])
+            self.assertIn("提交导入设置 Assets/a.png.meta", self.user.get("/api/v1/meta/log").json()["log"])
+        board_access.set_hidden("/meta", True)
+        self.assertEqual(self.user.get("/api/v1/meta").status_code, 403)
 
     # ---------- 炸线 ----------
 

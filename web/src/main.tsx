@@ -9,6 +9,7 @@ import BombBoard from "./boards/bomb/BombBoard";
 import DocWatchBoard from "./boards/docwatch/DocWatchBoard";
 import HelpBoard from "./boards/help/HelpBoard";
 import MergeBoard from "./boards/merge/MergeBoard";
+import MetaBoard from "./boards/meta/MetaBoard";
 import ReviewBoard from "./boards/review/ReviewBoard";
 import WishBoard from "./boards/wish/WishBoard";
 import AppNav from "./components/AppNav";
@@ -62,6 +63,7 @@ createRoot(document.getElementById("root")!).render(
             <Route path="/chat/:id" element={<Gate port="/chat"><Chat /></Gate>} />
             <Route path="/docwatch/*" element={<Gate port="/docwatch"><DocWatchBoard /></Gate>} />
             <Route path="/help/*" element={<Gate port="/help"><HelpBoard /></Gate>} />
+            <Route path="/meta/*" element={<Gate port="/meta"><MetaBoard /></Gate>} />
             <Route path="*" element={<p style={{ padding: 24 }}>没有这个页面。<Link to="/">回大豆</Link></p>} />
           </Route>
         </Routes>

@@ -26,6 +26,7 @@ API_PREFIXES = {
     "/chat": ("/api/v1/chat",),
     "/help": ("/api/v1/help",),
     "/docwatch": ("/api/v1/docwatch",),
+    "/meta": ("/api/v1/meta",),
 }
 CLOSED_MESSAGE = "这个看板管理员暂时关闭了。"
 

@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
-import { api } from "../../api/client";
 import { ActionButton, adminPost, Clip, Lines, OnOff, stamp, useAdmin, useSynced } from "./common";
-import type { BombAdmin, MetaCommit, MetaItem, MetaRef, MetaResult, MetaScan, PullState, Status, WatchState } from "./types";
+import type { BombAdmin, PullState, Status, WatchState } from "./types";
 
 const BOMB_BOARD = "/bomb/";
 
@@ -184,140 +183,6 @@ function BombSection() {
   );
 }
 
-function RefList({ refs }: { refs: MetaRef[] }) {
-  return (
-    <ul className="meta">
-      {refs.map((ref) => {
-        const since = ref.since as MetaCommit | undefined;
-        return (
-          <li key={ref.path}>
-            <code>{ref.path}</code> 引用 {ref.count} 处
-            {since?.hash ? `，${since.short} ${since.author} ${since.date} 开始引用` : ""}
-            {!ref.replace && `（${ref.reason}）`}
-            {ref.replace && ref.dirty && <span className="bad">（本地也有别的修改，会一起提交）</span>}
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-
-function GuidItem({ item }: { item: MetaItem }) {
-  const commit = item.commit as MetaCommit | undefined;
-  const refs = item.refs || [];
-  const change = refs.filter((ref) => ref.replace);
-  const keep = refs.filter((ref) => !ref.replace);
-  return (
-    <div className="sub">
-      <div><code>{item.path}</code></div>
-      <div className="meta">提交里是 <code>{item.old_guid}</code>，本地是 <code>{item.new_guid}</code></div>
-      {!commit?.hash ? <div className="bad">{item.note || "找不到重复 guid 的提交，不处理。"}</div> : (
-        <>
-          <div className="meta">旧 guid 和这些 meta 重复：{(commit.dup_paths || []).map((dup) => <code key={dup}>{dup} </code>)}</div>
-          <div className="meta">
-            重复提交（两边里后拿到这个 guid 的）：{commit.short} {commit.author} {commit.date} {commit.subject}
-          </div>
-          {commit.mine_later ? (
-            <div className="meta">
-              本地这个 meta 是后来的；另一个在 {commit.other?.short} {commit.other?.author} {commit.other?.date} 就有这个 guid。
-              重复提交及之后开始的引用换成本地 guid，之前的不动。
-            </div>
-          ) : (
-            <div className="bad">
-              本地这个 meta 是之前的（{(commit.mine as MetaCommit | undefined)?.short || "?"}），另一个是后来的。
-              重复提交之前的引用换成本地 guid，之后的不动。
-            </div>
-          )}
-          {item.grep_done === false && <div className="bad">没查完哪些文件引用旧 guid，这个先不处理。</div>}
-          <div className="meta">换成本地 guid（{change.length} 个文件）{change.length ? "：" : ""}</div>
-          {change.length > 0 && <RefList refs={change} />}
-          {keep.length > 0 && (
-            <>
-              <div className="meta">不动（{keep.length} 个文件）：</div>
-              <RefList refs={keep} />
-            </>
-          )}
-        </>
-      )}
-    </div>
-  );
-}
-
-function MetaSection() {
-  const [scan, setScan] = useState<MetaScan>();
-  const [message, setMessage] = useState<{ text: string; bad?: boolean }>({ text: "" });
-  const [busy, setBusy] = useState("");
-  const { data: logData, refetch: refetchLog } = useAdmin<{ log: string }>("meta_log", false);
-  const imports = scan?.items.filter((item) => item.kind === "import") || [];
-  const guids = scan?.items.filter((item) => item.kind === "guid") || [];
-  const fixable = guids.filter((item) => (item.commit as MetaCommit | undefined)?.hash && item.grep_done);
-  const unknown = scan?.items.filter((item) => item.kind === "unknown") || [];
-  const files = fixable.reduce((sum, item) => sum + (item.refs || []).filter((ref) => ref.replace).length, 0);
-  // 不弹窗：结果写进下面的日志框和这一行提示。
-  const run = (name: string, work: () => Promise<void>) => async () => {
-    setBusy(name);
-    try {
-      await work();
-    } catch (error) {
-      setMessage({ text: (error as Error).message || "没完成", bad: true });
-    } finally {
-      setBusy("");
-      await refetchLog();
-    }
-  };
-  const check = run("check", async () => {
-    setScan(await api<MetaScan>("/admin/meta"));
-    setMessage({ text: "" });
-  });
-  const applyAll = run("apply", async () => {
-    const result = await api<MetaResult>("/admin/meta", { method: "POST", body: JSON.stringify({ action: "apply_all" }) });
-    setMessage({ text: result.message || "", bad: result.ok === false });
-    if (result.scan) setScan(result.scan);
-  });
-  return (
-    <section id="sec-meta">
-      <h2>meta 改动</h2>
-      <p className="meta">
-        查工作区里本地改过的 <code>.meta</code>。guid 没变（只改了导入设置）的直接提交；guid 变了的，找工作区里也用这个旧 guid 的别的 meta（和路径无关），
-        两边里后拿到这个 guid 的提交是重复提交。本地这个是后来的，就把重复提交及之后开始的引用换成本地新 guid，之前的是之前那个资源的，不动。
-        全部一次提交，只 commit 不 push，结果写在下面的日志里。「拉代码」会清掉本地修改，先处理完再拉。
-      </p>
-      <div className="row">
-        <button type="button" disabled={!!busy} onClick={check}>{busy === "check" ? "检查中…" : "检查"}</button>
-        {scan && (imports.length > 0 || fixable.length > 0) && (
-          <button type="button" className="primary" disabled={!!busy} onClick={applyAll}>
-            {busy === "apply" ? "处理中…" : `全部处理并提交（导入设置 ${imports.length} 个，guid ${fixable.length} 个，换 ${files} 个文件）`}
-          </button>
-        )}
-      </div>
-      <p className="meta">{message.bad ? <span className="bad">{message.text}</span> : message.text}</p>
-      <label>日志</label>
-      <pre className="meta" style={{ maxHeight: 240, overflow: "auto", whiteSpace: "pre-wrap" }}>{logData?.log || "还没有记录。"}</pre>
-      {scan?.seconds !== undefined && (
-        <div className="meta">
-          检查用时 {scan.seconds} 秒{scan.timing && Object.keys(scan.timing).length
-            ? "（" + Object.entries(scan.timing).map(([name, sec]) => `${name} ${sec} 秒`).join("，") + "）" : ""}
-        </div>
-      )}
-      {scan && !scan.items.length && <div className="meta">没有本地改过的 meta。</div>}
-      {imports.length > 0 && (
-        <div className="sub">
-          <label>只改导入设置（{imports.length} 个）</label>
-          <Clip text={imports.map((item) => item.path).join("\n")} />
-        </div>
-      )}
-      {guids.length > 0 && <label style={{ marginTop: 16 }}>guid 变了（{guids.length} 个）</label>}
-      {guids.map((item) => <GuidItem key={item.path} item={item} />)}
-      {unknown.length > 0 && (
-        <div className="sub">
-          <label>读不到 guid 行，没处理</label>
-          <Clip text={unknown.map((item) => item.path).join("\n")} />
-        </div>
-      )}
-    </section>
-  );
-}
-
 export default function CodeTab({ status }: { status?: Status }) {
   return (
     <>
@@ -326,7 +191,6 @@ export default function CodeTab({ status }: { status?: Status }) {
         <PullSection pull={status?.pull} />
         <WatchSection watch={status?.watch} />
       </div>
-      <MetaSection />
       <BombSection />
     </>
   );
