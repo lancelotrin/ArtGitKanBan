@@ -2,7 +2,7 @@
 
 打包机（Client/_Build/CICD/*/lib/helpers.*）打包失败后 POST {reason, log, meta, notify} 到
 http://<CICD_ANALYZE_HOST>:<CICD_ANALYZE_PORT>/cicd/analyze（可带 Bearer token），最多等 120 秒：
-- 机器人把日志预处理成关键报错，让 AI 分析根因；
+- 机器人把日志预处理成关键报错，让 AI 分析根因（Codex 用 Code 模式，在网页后台配的项目目录里只读查代码，和自检复盘一样）；
 - notify=true 时机器人自己往打包群发红色失败卡片，@ 触发人（TRIDENT BUILD_USER → trident_users.json）；
 - 回 {analysis, notified}。notified=false 时打包机自己用 webhook 发通知。
 成功卡片（APK / Patch / HybridCLR）POST 到 /cicd/card：{webhook: <打包机原本的 webhook 消息>, meta: {buildUser, …}}，

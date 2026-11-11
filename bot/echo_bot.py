@@ -7940,7 +7940,33 @@ def background_ask(messages: list, timeout: float = 0) -> str:
     return call_chat(LLM_MODEL, messages, LLM_FALLBACK_MODELS)
 
 
+def cicd_ask(messages: list, timeout: float = 0) -> str:
+    """CICD 失败分析：和自检复盘一样用 Codex Code 模式，工作目录是网页后台配的项目目录（只读查代码和 git）；
+    失败且配了智谱时退回智谱。"""
+    if not USE_CODEX:
+        return background_ask(messages, timeout)
+    name = codex_cli.label()
+    project_dir = codex_project_dir()
+    prompt = "\n\n".join(str(item.get("content") or "") for item in messages if item.get("content"))
+    prompt += (f"\n\n当前工作目录是项目目录 {project_dir}（在 git 仓库里），需要时可以自己 rg / git log / git show 查代码核对报错。"
+               "只读：不要修改文件，不要 fetch / checkout 等 git 写操作，不要联网。")
+    try:
+        answer, usage = codex_cli.code(prompt, project_dir, timeout)
+        model_stats.note(name, True, prompt_tokens=int(usage.get("input_tokens") or 0),
+                         completion_tokens=int(usage.get("output_tokens") or 0))
+        return redact(answer)
+    except (codex_cli.CodexError, codex_cli.CodexTimeout, OSError) as error:
+        model_stats.note(name, False, redact(f"{type(error).__name__}: {error}"))
+        if not LLM_API_KEY:
+            raise
+        log(f"[codex] CICD 分析退回智谱：{str(error)[:120]}")
+    return call_chat(LLM_MODEL, messages, LLM_FALLBACK_MODELS)
+
+
 def cicd_project_context(query: str) -> str:
+    """只给智谱用：Codex Code 模式会自己在配置的项目目录里查，不用先扫代码占分析时间。"""
+    if USE_CODEX:
+        return ""
     hits = search_code_ondemand(build_code_keywords(query, []))
     return "\n\n".join(f"文件 {path}\n{snippet}" for path, snippet in hits)
 
@@ -8008,7 +8034,7 @@ def setup_cicd():
     timeout = env_int("CICD_AI_TIMEOUT_SECONDS", 105, 10, 115)
     cicd.start_analysis_server(
         get_env("CICD_ANALYZE_HOST") or "127.0.0.1", env_int("CICD_ANALYZE_PORT", 3210, 1, 65535),
-        get_env("CICD_ANALYZE_TOKEN"), lambda messages: background_ask(messages, timeout), cicd_project_context,
+        get_env("CICD_ANALYZE_TOKEN"), lambda messages: cicd_ask(messages, timeout), cicd_project_context,
         notifier=CICD_NOTIFIER, reply_budget=env_int("CICD_REPLY_BUDGET_SECONDS", 100, 20, 115), log=log, report=log)
     if env_flag("ZEUS_WATCH_ENABLED", True):
         zeus = cicd.ZeusWatcher(
