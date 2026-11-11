@@ -1,10 +1,10 @@
 """meta 检查看板 API。逻辑在 bot/meta_fix.py，日志和锁在 console.meta_action。
 
-检查（只读 git）登录了都能用；全部处理会在部署机工程上 commit（不 push），只有管理员能点。
+检查（只读 git）和全部处理（在部署机工程上 commit，不 push）登录了都能用，日志记下是谁点的。
 """
 from fastapi import APIRouter, Depends, HTTPException
 
-from backend.deps import admin_user, current_user, same_origin
+from backend.deps import current_user, same_origin
 from console import server as console
 
 router = APIRouter(tags=["meta 检查"])
@@ -30,6 +30,6 @@ def meta_log(_user: dict = Depends(current_user)) -> dict:
 
 
 @router.post("/meta/apply", operation_id="apply_meta", dependencies=[Depends(same_origin)],
-             summary="管理员：全部处理并提交（不推送，跳过 pre-commit）。导入设置直接提交；guid 重复的把该换的引用换成本地新 guid")
-def apply_meta(_user: dict = Depends(admin_user)) -> dict:
-    return unwrap(console.meta_action("apply_all"))
+             summary="全部处理并提交（不推送，跳过 pre-commit）。导入设置直接提交；guid 重复的把该换的引用换成本地新 guid")
+def apply_meta(user: dict = Depends(current_user)) -> dict:
+    return unwrap(console.meta_action("apply_all", who=str(user.get("name") or user.get("open_id") or "")))

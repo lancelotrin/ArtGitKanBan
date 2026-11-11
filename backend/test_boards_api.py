@@ -132,11 +132,12 @@ class BoardsApiTest(unittest.TestCase):
             data = self.user.get("/api/v1/meta").json()
             self.assertEqual([(item["kind"], item["path"]) for item in data["items"]], [("import", "Assets/a.png.meta")])
             self.assertIn("导入设置 1 个", self.user.get("/api/v1/meta/log").json()["log"])
-            self.assertEqual(self.user.post("/api/v1/meta/apply").status_code, 403)
-            data = self.admin.post("/api/v1/meta/apply").json()
+            data = self.user.post("/api/v1/meta/apply").json()
             self.assertTrue(data["ok"])
             self.assertEqual(data["scan"]["items"], [])
-            self.assertIn("提交导入设置 Assets/a.png.meta", self.user.get("/api/v1/meta/log").json()["log"])
+            log = self.user.get("/api/v1/meta/log").json()["log"]
+            self.assertIn("（同事 点的）", log)
+            self.assertIn("提交导入设置 Assets/a.png.meta", log)
         board_access.set_hidden("/meta", True)
         self.assertEqual(self.user.get("/api/v1/meta").status_code, 403)
 

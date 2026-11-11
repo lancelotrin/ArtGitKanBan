@@ -2,7 +2,6 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../api/client";
 import { usePageTitle } from "../../lib/usePageTitle";
-import { useMe } from "../auth/AuthPages";
 import "./meta.css";
 
 // 和 backend/routers/meta.py → bot/meta_fix.py 的 scan / apply_all 对应。
@@ -89,7 +88,6 @@ function GuidCard({ item }: { item: Item }) {
 export default function MetaBoard() {
   usePageTitle("meta 检查");
   const client = useQueryClient();
-  const isAdmin = useMe().data?.role === "admin";
   const scanQuery = useQuery({
     queryKey: ["meta-scan"], queryFn: () => api<Scan>("/meta"),
     staleTime: Infinity, refetchOnWindowFocus: false, retry: false,
@@ -168,11 +166,9 @@ export default function MetaBoard() {
         </div>
         <div className="bar">
           <button disabled={busy} onClick={recheck}>{scanQuery.isFetching ? "检查中…" : "重新检查"}</button>
-          {isAdmin ? (
-            <button className="primary" disabled={busy || !scan || (!imports.length && !fixable.length)} onClick={applyAll}>
-              {applying ? "处理中…" : `全部处理并提交（导入设置 ${imports.length} 个，guid ${fixable.length} 个，换 ${files} 个文件）`}
-            </button>
-          ) : <span className="sub">提交只有管理员能点。</span>}
+          <button className="primary" disabled={busy || !scan || (!imports.length && !fixable.length)} onClick={applyAll}>
+            {applying ? "处理中…" : `全部处理并提交（导入设置 ${imports.length} 个，guid ${fixable.length} 个，换 ${files} 个文件）`}
+          </button>
           <span className="sub">只 commit 不 push，跳过 pre-commit。「拉代码」会清掉本地修改，先处理完再拉。</span>
         </div>
         {message.text && <div className={"msg" + (message.bad ? " bad" : "")}>{message.text}</div>}
