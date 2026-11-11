@@ -9,6 +9,7 @@ import unittest
 from unittest import mock
 
 from bot import meta_fix
+import http.server
 import json
 import socket
 import struct
@@ -265,7 +266,8 @@ class MetaFixTest(unittest.TestCase):
         os.makedirs(status_dir)
         with open(os.path.join(status_dir, "unity-mcp-status-whatever.json"), "w", encoding="utf-8") as handle:
             json.dump({"unity_port": port, "project_path": unity_bridge.data_path(self.root), "reloading": False}, handle)
-        with mock.patch.dict(os.environ, {"UNITY_MCP_STATUS_DIR": status_dir}):
+        with mock.patch.dict(os.environ, {"UNITY_MCP_STATUS_DIR": status_dir}), \
+                mock.patch.object(unity_bridge, "DEFAULT_HTTP_PORT", 1):
             result = unity_bridge.refresh(self.root)
         thread.join(5)
         server.close()
@@ -276,10 +278,65 @@ class MetaFixTest(unittest.TestCase):
 
     def test_unity_bridge_not_running(self) -> None:
         with mock.patch.dict(os.environ, {"UNITY_MCP_STATUS_DIR": os.path.join(self.root, "none")}), \
-                mock.patch.object(unity_bridge, "DEFAULT_PORT", 1):
+                mock.patch.object(unity_bridge, "DEFAULT_PORT", 1), \
+                mock.patch.object(unity_bridge, "DEFAULT_HTTP_PORT", 1):
             result = unity_bridge.refresh(self.root)
         self.assertFalse(result["ok"])
         self.assertIn("连不上 Unity", result["message"])
+
+    def fake_http(self, instances: list) -> tuple:
+        """假的 mcp-for-unity HTTP 服务，端口写进工程 RunState 的 pid 文件名。"""
+        seen = []
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *args) -> None:
+                pass
+
+            def reply(self, code: int, data: dict) -> None:
+                body = json.dumps(data).encode()
+                self.send_response(code)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def do_GET(self) -> None:
+                if self.path == "/health":
+                    self.reply(200, {"status": "healthy", "message": "MCP for Unity server is running"})
+                else:
+                    self.reply(200, {"success": True, "instances": instances})
+
+            def do_POST(self) -> None:
+                seen.append(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
+                self.reply(200, {"success": True, "message": "Refresh requested.", "data": {"resulting_state": "idle"}})
+
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        port = server.server_address[1]
+        run_state = os.path.join(self.root, "Library", "MCPForUnity", "RunState")
+        os.makedirs(run_state, exist_ok=True)
+        open(os.path.join(run_state, f"mcp_http_{port}.pid"), "w").close()
+        return port, seen
+
+    def test_unity_bridge_http(self) -> None:
+        name = os.path.basename(self.root)
+        port, seen = self.fake_http([{"project": "Other", "hash": "x"}, {"project": name, "hash": "abc"}])
+        with mock.patch.object(unity_bridge, "DEFAULT_HTTP_PORT", 1):
+            result = unity_bridge.refresh(self.root)
+        self.assertTrue(result["ok"], result)
+        self.assertIn(f"端口 {port}", result["message"])
+        self.assertEqual(seen[0]["type"], "refresh_unity")
+        self.assertEqual(seen[0]["unity_instance"], f"{name}@abc")
+        self.assertEqual(seen[0]["params"]["mode"], "force")
+
+    def test_unity_bridge_http_without_unity(self) -> None:
+        self.fake_http([])
+        with mock.patch.object(unity_bridge, "DEFAULT_HTTP_PORT", 1):
+            result = unity_bridge.refresh(self.root)
+        self.assertFalse(result["ok"])
+        self.assertIn("没有 Unity 连上来", result["message"])
 
 if __name__ == "__main__":
     unittest.main()
