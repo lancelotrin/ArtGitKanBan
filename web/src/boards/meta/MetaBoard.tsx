@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Component, type ReactNode, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../api/client";
 import { usePageTitle } from "../../lib/usePageTitle";
@@ -120,30 +120,52 @@ function PushRow({ push, canRetry, onRetry, busy }: { push: Push; canRetry: bool
   );
 }
 
+/** 页面里哪里出错都只显示错误，不整页白掉。 */
+class Guard extends Component<{ children: ReactNode }, { error: Error | null }> {
+  state = { error: null as Error | null };
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <div className="meta-page"><main className="wrap" style={{ paddingTop: 24 }}>
+        <div className="msg bad">页面出错了：{this.state.error.message}。如果刚更新过，重启大豆后台（./restart.sh）后再刷新页面。</div>
+      </main></div>
+    );
+  }
+}
+
 export default function MetaBoard() {
+  return <Guard><MetaPage /></Guard>;
+}
+
+function MetaPage() {
   usePageTitle("meta 检查");
   const client = useQueryClient();
   // 打开页面只读上次结果和进度，不自动检查；有任务在跑就每 2 秒刷新一次。
   const viewQuery = useQuery({
     queryKey: ["meta-view"], queryFn: () => api<View>("/meta"),
-    refetchInterval: (query) => (query.state.data?.job.running ? 2000 : 30_000),
+    refetchInterval: (query) => (query.state.data?.job?.running ? 2000 : 30_000),
   });
-  const running = !!viewQuery.data?.job.running;
+  // 后台没重启时 /meta 还是旧格式（没有 job），当成没有数据，别让页面崩掉。
+  const viewOk = !!viewQuery.data && typeof viewQuery.data === "object" && "job" in viewQuery.data;
+  const running = viewOk && !!viewQuery.data?.job?.running;
   const logQuery = useQuery({ queryKey: ["meta-log"], queryFn: () => api<{ log: string }>("/meta/log"), refetchInterval: running ? 2000 : 30_000 });
   const pushQuery = useQuery({ queryKey: ["meta-pushes"], queryFn: () => api<{ items: Push[] }>("/meta/pushes"), refetchInterval: running ? 4000 : 30_000 });
   const [error, setError] = useState("");
   const [sending, setSending] = useState(false);
-  const job = viewQuery.data?.job;
-  const scan = viewQuery.data?.scan || undefined;
+  const job = viewOk ? viewQuery.data?.job : undefined;
+  const scan = (viewOk && viewQuery.data?.scan) || undefined;
   const busy = sending || running;
 
-  const items = scan?.items || [];
+  const items = Array.isArray(scan?.items) ? scan!.items : [];
   const imports = items.filter((item) => item.kind === "import");
   const guids = items.filter((item) => item.kind === "guid");
   const fixable = guids.filter(fixableOf);
   const unknown = items.filter((item) => item.kind === "unknown");
   const files = fixable.reduce((sum, item) => sum + (item.refs || []).filter((ref) => ref.replace).length, 0);
-  const pushes = pushQuery.data?.items || [];
+  const pushes = Array.isArray(pushQuery.data?.items) ? pushQuery.data!.items : [];
 
   // 不弹窗：开始后看上面的进度、下面的日志。
   const start = async (action: "check" | "apply" | "push") => {
@@ -209,14 +231,15 @@ export default function MetaBoard() {
         </div>
         {running && job && (
           <div className="msg run">
-            <span className="spin" />{job.who ? `${job.who} 点了` : ""}「{job.title}」，{job.started_at.slice(11)} 开始，现在：{job.step || "排队"}
+            <span className="spin" />{job.who ? `${job.who} 点了` : ""}「{job.title}」，{String(job.started_at || "").slice(11)} 开始，现在：{job.step || "排队"}
           </div>
         )}
         {!running && job?.finished_at && (
-          <div className={"msg" + (job.ok ? "" : " bad")}>{job.finished_at.slice(5)} {job.title}：{job.message}</div>
+          <div className={"msg" + (job.ok ? "" : " bad")}>{String(job.finished_at).slice(5)} {job.title}：{job.message}</div>
         )}
         {error && <div className="msg bad">{error}</div>}
         {viewQuery.error && <div className="msg bad">{(viewQuery.error as Error).message}</div>}
+        {viewQuery.data && !viewOk && <div className="msg bad">接口还是旧版本，重启大豆后台（./restart.sh）后再刷新页面。</div>}
         {scan && (scan.pull?.ok === false || scan.unity?.ok === false) && (
           <div className="msg warn">
             上次检查时：{[scan.pull, scan.unity].filter((note) => note && !note.ok).map((note) => note!.message).join(" ")}
