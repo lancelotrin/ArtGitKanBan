@@ -1,4 +1,4 @@
-import { lazy, type ReactNode, StrictMode, Suspense } from "react";
+import { Component, lazy, type ReactNode, StrictMode, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Link, Outlet, Route, Routes } from "react-router";
@@ -14,9 +14,39 @@ import ReviewBoard from "./boards/review/ReviewBoard";
 import WishBoard from "./boards/wish/WishBoard";
 import AppNav from "./components/AppNav";
 
+// 重新构建后，开着的旧页面里记的分块文件名（ChatPage-xxx.js）已被删掉，按需加载会失败。
+// 这时自动刷新一次拿新版本；10 秒内刷过还失败就不再刷，交给 LazyBoundary 显示提示，免得来回刷。
+window.addEventListener("vite:preloadError", (event) => {
+  try {
+    const last = Number(sessionStorage.getItem("chunk-reload-at") || 0);
+    if (Date.now() - last < 10_000) return;
+    sessionStorage.setItem("chunk-reload-at", String(Date.now()));
+  } catch {
+    return;
+  }
+  event.preventDefault();
+  location.reload();
+});
+
+/** 按需加载的页面出错时只在内容区显示提示，不让整个页面（连导航条）白屏。 */
+class LazyBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  render() {
+    if (!this.state.failed) return this.props.children;
+    return <p style={{ padding: 24 }}>页面没加载出来（可能刚更新过）。<a href={location.href}>刷新一下</a></p>;
+  }
+}
+
 // AI 聊天带 Markdown 渲染，体积大，按需加载
 const ChatPage = lazy(() => import("./boards/chat/ChatPage"));
-const Chat = () => <Suspense fallback={null}><ChatPage /></Suspense>;
+const Chat = () => (
+  <LazyBoundary>
+    <Suspense fallback={<p style={{ padding: 24, color: "#888" }}>正在加载…</p>}><ChatPage /></Suspense>
+  </LazyBoundary>
+);
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: true } } });
 
