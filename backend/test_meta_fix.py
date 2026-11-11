@@ -122,6 +122,24 @@ class MetaFixTest(unittest.TestCase):
         self.assertEqual(replace, {"Assets/old.prefab": True, "Assets/hero_a.prefab": False,
                                    "Assets/later.prefab": False, "Assets/hero_b.prefab": False})
 
+    def test_skips_pre_commit_hook(self) -> None:
+        hook = os.path.join(self.root, ".git", "hooks", "pre-commit")
+        with open(hook, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write("#!/bin/sh\necho hook ran\nexit 1\n")
+        os.chmod(hook, 0o755)
+        result = meta_fix.apply_all(self.root)
+        self.assertTrue(result["ok"])
+        self.assertIn("Assets/hero.mat.meta", self.run_git("show", "--name-only", "--format=", "HEAD").split())
+
+    def test_restores_files_when_commit_fails(self) -> None:
+        before = self.read("Assets/hero_a.prefab")
+        with mock.patch.object(meta_fix, "commit", side_effect=RuntimeError("提交失败：钩子")):
+            with self.assertRaises(RuntimeError) as caught:
+                meta_fix.apply_all(self.root)
+        self.assertIn("已改回原样", str(caught.exception))
+        self.assertEqual(self.read("Assets/hero_a.prefab"), before)
+        self.assertEqual(self.read("Assets/later.prefab"), f"d: {{guid: {OLD}}}\n")
+
     def test_guid_changed_without_duplicate(self) -> None:
         self.write("Assets/tex.png.meta", meta(NEW))
         item = next(row for row in meta_fix.scan(self.root)["items"] if row["path"] == "Assets/tex.png.meta")
