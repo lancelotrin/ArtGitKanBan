@@ -173,6 +173,8 @@ def bomb_fake_ok() -> bool:
             and found[0]["at"] == "2026-11-03T12:18:00+08:00"
             and found[0].get("paths") == ["a.prefab"]
             and bot.bomb.path_ignored("Client/Assets/DataTable/A.xml", ["Assets/DataTable/"])
+            and bot.bomb.path_ignored("Client/Assets/StreamingAssets/Battle/Buff.bytes", ["StreamingAssets/Battle/"])
+            and not bot.bomb.path_ignored("Client/Assets/MyStreamingAssets/Battle/Buff.bytes", ["StreamingAssets/Battle/"])
             and bot.bomb.normalize_ignore_path("Assets/DataTable") == "Assets/DataTable/"
             and len(kept) == 1 and kept[0]["merge"] == "abc" and kept[0]["count"] == 1
             and [f["path"] for f in kept[0]["files"]] == ["Foo/a.cs"] and dropped == 4)
@@ -613,6 +615,8 @@ def run_memory() -> int:
         and bot.is_review_skip_subject(" auto sync svc  from devops ")
         and bot.is_review_skip_subject("【Shader】Auto update output 修复")
         and bot.is_review_skip_subject("Merge: Auto Sync SVC from DevOps #12")
+        and bot.is_review_skip_subject("Auto sync config")
+        and bot.is_review_skip_subject("【资源】AUTO SYNC 表格")
         and not bot.is_review_skip_subject("【Shader】Uber寄存器合并")
         and not bot.review_needs_notice({"status": "empty"})
         and not bot.review_needs_notice({"status": "ok", "commits": [1], "report_md": "x\n没看出明显问题，修改合理。"})

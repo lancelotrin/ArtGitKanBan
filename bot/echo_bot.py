@@ -3664,11 +3664,11 @@ def review_day_bounds(day: datetime.date) -> tuple:
     return start.isoformat(timespec="seconds"), (start + datetime.timedelta(days=1)).isoformat(timespec="seconds")
 
 
-REVIEW_SKIP_SUBJECTS = {"auto update output", "auto sync svc from devops"}
+REVIEW_SKIP_SUBJECTS = {"auto update output", "auto sync"}
 
 
 def is_review_skip_subject(subject: str) -> bool:
-    """说明里含打包输出、DevOps 同步这类字样的提交都不进复盘。"""
+    """说明里含 Auto update output、Auto sync（不分大小写）的提交都不进复盘。"""
     text = " ".join((subject or "").split()).lower()
     return any(item in text for item in REVIEW_SKIP_SUBJECTS)
 
@@ -3805,7 +3805,7 @@ def answer_review_info() -> str:
         "每天 0 点（北京时间）复盘名单里每个人**前一天**在 main 和 CBT2_bugfix 上的提交，按真实 diff 写改动、影响和隐患。",
         f"- 结果网页：[{base}]({base})，可以按日期看所有人",
         f"- 汇总发到 {len(groups)} 个群" if groups else "- 现在不发群",
-        "- 只有看出问题（需要留意、炸线、生成失败）才私聊和发群，没提交或没问题不打扰；说明里含「Auto update output」「Auto sync svc from devops」的提交不算",
+        "- 只有看出问题（需要留意、炸线、生成失败）才私聊和发群，没提交或没问题不打扰；说明里含「Auto update output」「Auto sync」的提交不算",
         f"- 名单：{names}。要加人找朱辉在后台登记（git 作者名要和提交里一致）",
         "想现在就看某人的提交自检，说「zhuhui 最近 10 条提交 自检」。",
     ]
