@@ -45,8 +45,10 @@ def path_ignored(path: str, ignore_paths: list) -> bool:
     normalized = str(path or "").replace("\\", "/")
     if normalized.lower().startswith("client/"):
         normalized = normalized[7:]
-    lower = normalized.lower()
-    return any(lower.startswith(prefix.lower()) for prefix in ignore_paths if prefix)
+    # 前缀可以从路径开头匹配，也可以从中间任意一级目录开始匹配：
+    # 提醒里显示的是缩短后的路径（如 StreamingAssets/Battle/x），照抄进来也要能滤掉
+    lower = "/" + normalized.lower()
+    return any("/" + prefix.lower().lstrip("/") in lower for prefix in ignore_paths if prefix)
 
 
 def filter_merges_for_alert(merges: list, ignore_paths: list) -> tuple:

@@ -1,5 +1,5 @@
 {
-  "next_id": 8,
+  "next_id": 9,
   "wishes": [
     {
       "id": 1,
@@ -10,7 +10,8 @@
       "votes": [
         "廖威",
         "徐浩然",
-        "钱涛"
+        "钱涛",
+        "张海鹏"
       ],
       "status": "open",
       "taker": "",
@@ -25,10 +26,10 @@
       "author": "张琪",
       "created_at": "2026-11-04T14:51:07+08:00",
       "votes": [],
-      "status": "open",
-      "taker": "",
-      "taken_at": "",
-      "done_at": "",
+      "status": "done",
+      "taker": "葛相麟",
+      "taken_at": "2026-11-10T11:36:41+08:00",
+      "done_at": "2026-11-10T11:36:45+08:00",
       "role": "美术"
     },
     {
@@ -56,6 +57,19 @@
       "taken_at": "",
       "done_at": "",
       "role": "美术"
+    },
+    {
+      "id": 8,
+      "title": "Unity里关闭宏：PIE_DEBUG PIE_DEBUG_LOG之后，回放战斗不频繁出现Unity闪退",
+      "detail": "Unity Editor默认开启这两个宏的时候，很少闪退。关闭之后，明显出现闪退。回放一个bin文件不超过10次，甚至一两次，就会频繁闪退。每次闪退的Editor.log 都不相同，非常难受。",
+      "role": "程序",
+      "author": "张海鹏",
+      "created_at": "2026-11-10T11:51:00+08:00",
+      "votes": [],
+      "status": "open",
+      "taker": "",
+      "taken_at": "",
+      "done_at": ""
     }
   ],
   "settings": {

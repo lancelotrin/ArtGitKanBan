@@ -1,68 +1,107 @@
 {
   "told": [
-    "19c8b8750ea",
-    "124c18cd323",
-    "fc3a737170d",
-    "5c5ac48ec8a",
-    "29c24e3990c",
-    "ec4273a9895",
-    "fd05e0eed23",
-    "697242bb42e",
-    "aad30d19c09",
+    "cb81e9adec1",
     "cb2bcfdff50",
     "b404ff1f4ba",
-    "cb81e9adec1"
+    "697242bb42e",
+    "384f3f89674",
+    "cf82e41132b",
+    "6b1bf829cff",
+    "a06d9e1d01e"
   ],
-  "last_at": "2026-11-05T20:42:46+08:00",
-  "last_result": "查了最近 2 天 160 个合并，新报 0 条。忽略路径滤掉 12 个文件。",
-  "run_requested": false,
-  "next_at": "2026-11-05T21:12:46+08:00",
-  "enabled": true,
-  "minutes": 30,
-  "days": 2,
   "recent": [
     {
-      "at": "2026-11-05T17:38:59+08:00",
+      "at": "2026-11-10T11:13:58+08:00",
       "sent": true,
-      "text": "**main** `cb81e9adec1` 11-05 14:04 **zhangyanjun** 合并，丢了 1 个文件的修改：\n· `UIControls/NodeStateController/NodeState.cs`（之后又改过，要人工看）丢的是：对面那侧的修改\n\n判断依据：某文件在被合进来的那一侧改过，合并结果却和另一侧完全一样，说明那侧修改被整份丢掉（多半是解冲突选了「用我的」）。也可能是故意保留，所以算疑似，请当事人确认。"
+      "text": "新发现 **1** 条。处理完到 [炸线看板](http://10.234.30.83/bomb/) 点「标记已解决」，就不再提醒。\n\n**【main】**\n\n**gexianglin** 合并 1 次，丢了 2 个文件的修改\n合并 `a06d9e1d01e` 11-10 10:32：\n· `StreamingAssets/Battle/Buff.bytes`（还丢着 · 丢的分支：本地 main）丢的是：gexianglin 11-03 18:15「每日自动从 CBT2_bugfix 合并」`55c4cb6dd4d`\n  Codex 判断：看不出：二进制差异，自动合并说明未交代取舍意图\n· `StreamingAssets/Battle/BuffPVP.bytes`（还丢着 · 丢的分支：本地 main）丢的是：gexianglin 11-03 18:15「每日自动从 CBT2_bugfix 合并」`55c4cb6dd4d`\n  Codex 判断：看不出：二进制差异，自动合并说明未交代取舍意图"
     },
     {
-      "at": "2026-11-05T17:08:15+08:00",
-      "sent": false,
-      "text": "**main** `cb81e9adec1` 11-05 14:04 **zhangyanjun** 合并，丢了 1 个文件的修改：\n· `UIControls/NodeStateController/NodeState.cs`（之后又改过，要人工看）丢的是：对面那侧的修改\n\n判断依据：某文件在被合进来的那一侧改过，合并结果却和另一侧完全一样，说明那侧修改被整份丢掉（多半是解冲突选了「用我的」）。也可能是故意保留，所以算疑似，请当事人确认。"
+      "at": "2026-11-10T09:12:59+08:00",
+      "sent": true,
+      "text": "之前报过、还没标记解决 **1** 条。处理完到 [炸线看板](http://10.234.30.83/bomb/) 点「标记已解决」，就不再提醒。\n\n**【main】**\n\n**gexianglin** 合并 1 次，丢了 26 个文件的修改\n合并 `6b1bf829cff` 11-09 19:49：\n· `Scene02/Timeline/CS_Chap01_SC02.prefab`（还丢着 · 丢的分支：CBT2_bugfix）丢的是：zhangyanjun 11-09 16:42「移除非必要的meshcollider」`f57da8747be`\n  Codex 判断：像是误丢：后效迁移不能替代独立的碰撞体清理\n· `UI_Team/Character/UI_Team_Role_Ace.prefab`（还丢着 · 丢的分支：CBT2_bugfix）丢的是：zhangyanjun 11-09 16:42「移除非必要的meshcollider」`f57da8747be`\n  Codex 判断：像是误丢：保留编队调整时连带丢了碰撞体清理\n· `UI_Team/Character/UI_Team_Role_Ivankov.prefab`（还丢着 · 丢的分支：CBT2_bugfix）丢的是：zhangyanjun 11-09 16:42「移除非必要的meshcollider」`f57da8747be`\n  Codex 判断：像是误丢：保留编队调整时连带丢了碰撞体清理\n· `UI_Team/Character/UI_Team_Role_Mihawk.prefab`（还丢着 · 丢的分支：CBT2_bugfix）丢的是：zhangyanjun 11-09 16:42「移除非必要的meshcollider」`f57da8747be`\n  Codex 判断：像是误丢：构图调整不能替代独立的碰撞体清理\n· `UI_Team/Character/UI_Team_Role_Smoker.prefab`（还丢着 · 丢的分支：CBT2_bugfix）丢的是：zhangyanjun 11-09 16:42「移除非必要的meshcollider」`f57da8747be`\n  Codex 判断：像是误丢：碰撞体清理明确，与编队展示调整无关\n· `UI_Team/Character/UI_Team_Role_Zoro.prefab`（还丢着 · 丢的分支：CBT2_bugfix）丢的是：zhangyanjun 11-09 16:42「移除非必要的meshcollider」`f57da8747be`\n  Codex 判断：像是误丢：碰撞体清理明确，与编队展示调整无关\n· `UI/UI_Map/UI_Map.cs`（还丢着 · 丢的分支：CBT2_bugfix）丢的是：zhangxiaosu 11-09 14:59「地图界面返回到打卡主界面」`9ef4725a4c9`\n  Codex 判断：像是误丢：本侧仅修常量报错，未替代返回栈修复\n· `Shader/ShaderVariants/ShaderVariantWarmupList.txt`（还丢着 · 丢的分支：本地 main）丢的是：gexianglin 11-07 00:15「Auto sync svc from devops: 周六 2026/11/07」`4d69b802363`；gexianglin 11-04 00:19「Auto sync svc from devops: 周三 2026/11/04」`718b79c1ca8`\n  Codex 判断：像是故意保留：自动同步清单，采用分支内存优化后的版本\n· 另外还有 18 个文件"
     },
     {
-      "at": "2026-11-04T19:32:40+08:00",
+      "at": "2026-11-09T20:11:45+08:00",
       "sent": true,
-      "text": "**main** `cb2bcfdff50` 11-04 19:20 **gexianglin** 合并，丢了 2 个文件的修改：\n· `Crocodile/Mesh/FX_Crocodile_Ground_01.FBX.meta`（还丢着）丢的是：对面那侧的修改\n· `Crocodile/Mesh/Fx_Role_Crocodile_UL_02.FBX.meta`（还丢着）丢的是：对面那侧的修改\n\n**main** `b404ff1f4ba` 11-04 19:19 **gexianglin** 合并，丢了 147 个文件的修改：\n· `.fork/custom-commands.json`（还丢着）丢的是：gexianglin 11-04 12:20「Fork 支持 reset hard」`74fa5d22edb`；gexianglin 11-04 10:53「Fork 支持 reset hard」`c466f92089a`\n· `BattleLibrary/output/BattleLibrary.dll`（还丢着）丢的是：gexianglin 11-04 17:50「Auto update BattleLibrary output: 2026-1」`eacac29494c`\n· `BattleLibrary/output/BattleLibrary.so`（还丢着）丢的是：gexianglin 11-04 17:50「Auto update BattleLibrary output: 2026-1」`eacac29494c`\n· `Crocodile/Timeline/UL_Role_Crocodile.prefab`（还丢着）丢的是：zengwei 11-03 15:14「奥义小黑盒修改」`0a091076018`\n· `Scene/OP_Baratie03/OP_Baratie03.unity`（还丢着）丢的是：zhanghaipeng 11-04 15:48「【scene，asset】OP_Baratie03场景重新烘焙 PerfectC」`71cc9f7c1b1`\n· `Shader/ShaderVariants/ShaderVariantWarmupList.txt`（还丢着）丢的是：gexianglin 11-03 15:20「从shader分支合并」`449f54363bc`\n· `Shader/ShaderVariants/ShaderVariantWarmupList_Battle.txt`（还丢着）丢的是：gexianglin 11-03 15:20「从shader分支合并」`449f54363bc`\n· `Shader/ShaderVariants/ShaderVariantWarmupList_Resources.txt`（还丢着）丢的是：gexianglin 11-03 15:20「从shader分支合并」`449f54363bc`\n· 另外还有 139 个文件\n\n判断依据：某文件在被合进来的那一侧改过，合并结果却和另一侧完全一样，说明那侧修改被整份丢掉（多半是解冲突选了「用我的」）。也可能是故意保留，所以算疑似，请当事人确认。"
+      "text": "新发现 **1** 条。处理完到 [炸线看板](http://10.234.30.83/bomb/) 点「标记已解决」，就不再提醒。\n\n**【main】**\n\n**gexianglin** 合并 1 次，丢了 26 个文件的修改\n合并 `6b1bf829cff` 11-09 19:49：\n· `Scene02/Timeline/CS_Chap01_SC02.prefab`（还丢着 · 丢的分支：CBT2_bugfix）丢的是：zhangyanjun 11-09 16:42「移除非必要的meshcollider」`f57da8747be`\n  Codex 判断：像是误丢：后效迁移不能替代独立的碰撞体清理\n· `UI_Team/Character/UI_Team_Role_Ace.prefab`（还丢着 · 丢的分支：CBT2_bugfix）丢的是：zhangyanjun 11-09 16:42「移除非必要的meshcollider」`f57da8747be`\n  Codex 判断：像是误丢：保留编队调整时连带丢了碰撞体清理\n· `UI_Team/Character/UI_Team_Role_Ivankov.prefab`（还丢着 · 丢的分支：CBT2_bugfix）丢的是：zhangyanjun 11-09 16:42「移除非必要的meshcollider」`f57da8747be`\n  Codex 判断：像是误丢：保留编队调整时连带丢了碰撞体清理\n· `UI_Team/Character/UI_Team_Role_Mihawk.prefab`（还丢着 · 丢的分支：CBT2_bugfix）丢的是：zhangyanjun 11-09 16:42「移除非必要的meshcollider」`f57da8747be`\n  Codex 判断：像是误丢：构图调整不能替代独立的碰撞体清理\n· `UI_Team/Character/UI_Team_Role_Smoker.prefab`（还丢着 · 丢的分支：CBT2_bugfix）丢的是：zhangyanjun 11-09 16:42「移除非必要的meshcollider」`f57da8747be`\n  Codex 判断：像是误丢：碰撞体清理明确，与编队展示调整无关\n· `UI_Team/Character/UI_Team_Role_Zoro.prefab`（还丢着 · 丢的分支：CBT2_bugfix）丢的是：zhangyanjun 11-09 16:42「移除非必要的meshcollider」`f57da8747be`\n  Codex 判断：像是误丢：碰撞体清理明确，与编队展示调整无关\n· `UI/UI_Map/UI_Map.cs`（还丢着 · 丢的分支：CBT2_bugfix）丢的是：zhangxiaosu 11-09 14:59「地图界面返回到打卡主界面」`9ef4725a4c9`\n  Codex 判断：像是误丢：本侧仅修常量报错，未替代返回栈修复\n· `Shader/ShaderVariants/ShaderVariantWarmupList.txt`（还丢着 · 丢的分支：本地 main）丢的是：gexianglin 11-07 00:15「Auto sync svc from devops: 周六 2026/11/07」`4d69b802363`；gexianglin 11-04 00:19「Auto sync svc from devops: 周三 2026/11/04」`718b79c1ca8`\n  Codex 判断：像是故意保留：自动同步清单，采用分支内存优化后的版本\n· 另外还有 18 个文件"
     },
     {
-      "at": "2026-11-04T17:17:14+08:00",
+      "at": "2026-11-09T15:08:28+08:00",
       "sent": true,
-      "text": "**CBT2_bugfix** `aad30d19c09` 11-04 16:50 **guoyanchen** 合并，丢了 1 个文件的修改：\n· `Assets/DataTable/DamageTable.xml`（之后又改过，要人工看）丢的是：liangkangshuo 11-04 16:22「肉鸽词条冷却」`79eb2106136`\n\n判断依据：某文件在被合进来的那一侧改过，合并结果却和另一侧完全一样，说明那侧修改被整份丢掉（多半是解冲突选了「用我的」）。也可能是故意保留，所以算疑似，请当事人确认。"
+      "text": "新发现 **1** 条。处理完到 [炸线看板](http://10.234.30.83/bomb/) 点「标记已解决」，就不再提醒。\n\n**【main】**\n\n**gexianglin** 合并 1 次，丢了 58 个文件的修改\n合并 `cf82e41132b` 11-09 14:57：\n· `Prefab/UI_PVE/UI_PVE_SupportCharacter.prefab`（还丢着 · 丢的分支：CBT2_bugfix）丢的是：lijunjie 11-05 11:07「动画重新打开」`6d03006e07d`\n  Codex 判断：像是故意保留：动画已开启，保留的是新版切人特效路径\n· `UIControls/NodeStateController/NodeState.cs`（还丢着 · 丢的分支：CBT2_bugfix）丢的是：zhanghaipeng 11-05 15:10「【C#】修改UIStateController 编辑器下仍然使用Active的方」`baecebcea05`\n  Codex 判断：像是故意保留：编辑器Active修复已保留，另有声明式扩展\n· `UIControls/NodeStateController/UIStateController.cs`（还丢着 · 丢的分支：CBT2_bugfix）丢的是：chenlong 11-05 16:00「修复符文主界面从训练页回来后的表现」`4ac9b4d4dac`\n  Codex 判断：像是故意保留：强制重应用修复已保留，并扩展声明式切换\n· `StreamingAssets/Data/RedDots.bytes`（还丢着 · 丢的分支：CBT2_bugfix）丢的是：wangtao 11-06 18:44「Auto-commit(导出) 红点借单」`e006cde9609`\n  Codex 判断：看不出：二进制导出且主线另有更新，无法确认覆盖意图\n· `Editor/Configs/checkPathConfig.asset.meta`（还丢着 · 丢的分支：CBT2_bugfix）丢的是：zhanghaipeng 11-06 10:50「【asset】修改资源每日检查Material负责人」`2892b80ed6c`\n  Codex 判断：像是故意保留：仅GUID不同，主线后续路径调整已重新生成\n· `CICD/Windows/generate_all_bank.ps1`（还丢着 · 丢的分支：CBT2_bugfix）丢的是：gexianglin 11-09 11:09「支持 Wwise Bank 多分支提交上传」`4b8188a52b9`；gexianglin 11-06 18:35「音频 cicd」`ce470b7ea65`\n  Codex 判断：像是故意保留：多分支上传已保留，另补Unity生成meta及校验\n· `skills/battle-dev/routes.md`（还丢着 · 丢的分支：本地 main）丢的是：gexianglin 11-03 18:15「每日自动从 CBT2_bugfix 合并」`55c4cb6dd4d`\n  Codex 判断：像是故意保留：保留文档与代码死亡拦截一致，旧说明已过时\n· 另外还有 51 个文件"
     },
     {
-      "at": "2026-11-04T16:44:45+08:00",
+      "at": "2026-11-09T11:05:17+08:00",
       "sent": true,
-      "text": "**CBT2_bugfix** `697242bb42e` 11-04 16:23 **liangkangshuo** 合并，丢了 2 个文件的修改：\n· `StreamingAssets/Battle/Buff.bytes`（之后又改过，要人工看）丢的是：liangkangshuo 11-04 16:22「肉鸽词条冷却」`79eb2106136`\n· `StreamingAssets/Battle/BuffPVP.bytes`（之后又改过，要人工看）丢的是：liangkangshuo 11-04 16:22「肉鸽词条冷却」`79eb2106136`\n\n判断依据：某文件在被合进来的那一侧改过，合并结果却和另一侧完全一样，说明那侧修改被整份丢掉（多半是解冲突选了「用我的」）。也可能是故意保留，所以算疑似，请当事人确认。"
+      "text": "新发现 **1** 条。处理完到 [炸线看板](http://10.234.30.83/bomb/) 点「标记已解决」，就不再提醒。\n\n**【main】**\n\n**guoyanchen** 合并 1 次，丢了 1 个文件的修改\n合并 `384f3f89674` 11-09 10:43：\n· `skills/onepiece-combat-configure-camera/SKILL.md`（还丢着 · 丢的分支：远端 main）丢的是：zhukuanqi 11-06 14:57「补充战斗相机配置规范和鹰眼迁移案例」`a058ab08d81`\n  Codex 判断：像是故意保留：鹰眼规范已纳入，仅保留更细的子阶段与同步规则"
     },
     {
-      "at": "2026-11-04T11:53:23+08:00",
+      "at": "2026-11-06T11:59:15+08:00",
       "sent": true,
-      "text": "**CBT2_bugfix** `fd05e0eed23` 11-04 11:37 **guoyanchen** 合并，丢了 2 个文件的修改：\n· `StreamingAssets/Battle/Buff.bytes`（之后又改过，要人工看）丢的是：guoyanchen 11-04 11:35「训练场风格点buff修正」`24ff547713b`\n· `StreamingAssets/Battle/BuffPVP.bytes`（之后又改过，要人工看）丢的是：guoyanchen 11-04 11:35「训练场风格点buff修正」`24ff547713b`\n\n判断依据：某文件在被合进来的那一侧改过，合并结果却和另一侧完全一样，说明那侧修改被整份丢掉（多半是解冲突选了「用我的」）。也可能是故意保留，所以算疑似，请当事人确认。"
+      "text": "之前报过、还没标记解决 **1** 条。处理完到 [炸线看板](http://10.234.30.83/bomb/) 点「标记已解决」，就不再提醒。\n\n**【main】**\n\n**zhangyanjun** 合并 1 次，丢了 1 个文件的修改\n合并 `cb81e9adec1` 11-05 14:04：\n· `UIControls/NodeStateController/NodeState.cs`（之后又改过，要人工看 · 丢的分支：远端 main）丢的是：zhanghaipeng 11-03 17:59「【C#】减少GameObject.Activate消耗」`90c671f4646`\n  Codex 判断：像是故意保留：对方软隐藏优化已完整保留，本侧另增初始化修正"
     },
     {
-      "at": "2026-11-04T10:16:40+08:00",
+      "at": "2026-11-06T11:36:29+08:00",
       "sent": true,
-      "text": "**main** `ec4273a9895` 11-03 19:15 **linxuan** 合并，丢了 105 个文件的修改：\n· `DL/Timeline/CS_Chap01_DL.prefab`（还丢着）丢的是：linxuan 11-02 17:58「cutscene制作方式调整」`7a506b4cfaf`\n· `Scene01/Timeline/CS_Chap01_SC01.prefab`（还丢着）丢的是：linxuan 11-02 17:58「cutscene制作方式调整」`7a506b4cfaf`\n· `Scene02/Timeline/CS_Chap01_SC02.prefab`（还丢着）丢的是：linxuan 11-02 17:58「cutscene制作方式调整」`7a506b4cfaf`\n· `Scene01/Profile/Cutscene_Fade_Profile.asset`（还丢着）丢的是：linxuan 11-02 17:58「cutscene制作方式调整」`7a506b4cfaf`\n· `Scene01/Profile/Cutscene_Vignette_Profile.asset`（还丢着）丢的是：linxuan 11-02 17:58「cutscene制作方式调整」`7a506b4cfaf`\n· `Scene01/Timeline/CS_Chap02_SC01.prefab`（还丢着）丢的是：linxuan 11-02 17:58「cutscene制作方式调整」`7a506b4cfaf`\n· `Scene02/Timeline/CS_Chap02_SC02.prefab`（之后又改过，要人工看）丢的是：linxuan 11-02 17:58「cutscene制作方式调整」`7a506b4cfaf`\n· `Scene05/Timeline/CS_Chap02_SC05.prefab`（还丢着）丢的是：linxuan 11-02 17:58「cutscene制作方式调整」`7a506b4cfaf`\n· 另外还有 97 个文件\n\n判断依据：某文件在被合进来的那一侧改过，合并结果却和另一侧完全一样，说明那侧修改被整份丢掉（多半是解冲突选了「用我的」）。也可能是故意保留，所以算疑似，请当事人确认。"
+      "text": "之前报过、还没标记解决 **1** 条。处理完到 [炸线看板](http://10.234.30.83/bomb/) 点「标记已解决」，就不再提醒。\n\n**【main】**\n\n**zhangyanjun** 合并 1 次，丢了 1 个文件的修改\n合并 `cb81e9adec1` 11-05 14:04：\n· `UIControls/NodeStateController/NodeState.cs`（之后又改过，要人工看 · 丢的分支：远端 main）丢的是：对面那侧的修改\n  Codex 判断：看不出：缺少改动内容和提交说明，无法判断"
+    },
+    {
+      "at": "2026-11-06T11:33:13+08:00",
+      "sent": true,
+      "text": "之前报过、还没标记解决 **4** 条。处理完到 [炸线看板](http://10.234.30.83/bomb/) 点「标记已解决」，就不再提醒。\n\n**【CBT2_bugfix】**\n\n**liangkangshuo** 合并 1 次，丢了 2 个文件的修改\n合并 `697242bb42e` 11-04 16:23：\n· `StreamingAssets/Battle/Buff.bytes`（之后又改过，要人工看 · 丢的分支：本地 CBT2_bugfix）丢的是：liangkangshuo 11-04 16:22「肉鸽词条冷却」`79eb2106136`\n  Codex 判断：看不出：缺少差异内容，后续又改过，无法判断\n· `StreamingAssets/Battle/BuffPVP.bytes`（之后又改过，要人工看 · 丢的分支：本地 CBT2_bugfix）丢的是：liangkangshuo 11-04 16:22「肉鸽词条冷却」`79eb2106136`\n  Codex 判断：看不出：缺少差异内容，后续又改过，无法判断\n\n**【main】**\n\n**zhangyanjun** 合并 1 次，丢了 1 个文件的修改\n合并 `cb81e9adec1` 11-05 14:04：\n· `UIControls/NodeStateController/NodeState.cs`（之后又改过，要人工看 · 丢的分支：远端 main）丢的是：对面那侧的修改\n  Codex 判断：看不出：缺少改动内容和提交说明，无法判断\n\n**gexianglin** 合并 2 次，丢了 138 个文件的修改\n合并 `cb2bcfdff50` 11-04 19:20：\n· `Crocodile/Mesh/FX_Crocodile_Ground_01.FBX.meta`（还丢着 · 丢的分支：本地 main）丢的是：对面那侧的修改\n  Codex 判断：看不出：缺少差异和对应提交，无法判断意图\n· `Crocodile/Mesh/Fx_Role_Crocodile_UL_02.FBX.meta`（还丢着 · 丢的分支：本地 main）丢的是：对面那侧的修改\n  Codex 判断：看不出：缺少差异和对应提交，无法判断意图\n合并 `b404ff1f4ba` 11-04 19:19：\n· `.fork/custom-commands.json`（还丢着 · 丢的分支：CBT2_bugfix）丢的是：gexianglin 11-04 12:20「Fork 支持 reset hard」`74fa5d22edb`；gexianglin 11-04 10:53「Fork 支持 reset hard」`c466f92089a`\n  Codex 判断：看不出：缺少具体差异，提交说明不足以判断\n· `Crocodile/Timeline/UL_Role_Crocodile.prefab`（还丢着 · 丢的分支：CBT2_bugfix）丢的是：zengwei 11-03 15:14「奥义小黑盒修改」`0a091076018`\n  Codex 判断：看不出：缺少具体差异，无法判断修改是否被替代\n· `Scene/OP_Baratie03/OP_Baratie03.unity`（之后又改过，要人工看 · 丢的分支：CBT2_bugfix）丢的是：zhanghaipeng 11-04 15:48「【scene，asset】OP_Baratie03场景重新烘焙 PerfectC」`71cc9f7c1b1`\n  Codex 判断：看不出：缺少烘焙差异，后续改动也无法确认意图\n· `Shader/ShaderVariants/ShaderVariantWarmupList.txt`（还丢着 · 丢的分支：CBT2_bugfix）丢的是：gexianglin 11-03 15:20「从shader分支合并」`449f54363bc`\n  Codex 判断：看不出：缺少列表差异，无法确认是否有意舍弃\n· `Shader/ShaderVariants/ShaderVariantWarmupList_Battle.txt`（还丢着 · 丢的分支：CBT2_bugfix）丢的是：gexianglin 11-03 15:20「从shader分支合并」`449f54363bc`\n  Codex 判断：看不出：缺少列表差异，无法确认是否有意舍弃\n· `Shader/ShaderVariants/ShaderVariantWarmupList_Resources.txt`（还丢着 · 丢的分支：CBT2_bugfix）丢的是：gexianglin 11-03 15:20「从shader分支合并」`449f54363bc`\n  Codex 判断：看不出：缺少列表差异，无法确认是否有意舍弃\n· 另外还有 130 个文件"
+    },
+    {
+      "at": "2026-11-05T20:55:13+08:00",
+      "sent": true,
+      "text": "**main** `cb81e9adec1` 11-05 14:04 **zhangyanjun** 合并，丢了 1 个文件的修改：\n· `UIControls/NodeStateController/NodeState.cs`（之后又改过，要人工看）丢的是：对面那侧的修改\n\n**main** `cb2bcfdff50` 11-04 19:20 **gexianglin** 合并，丢了 2 个文件的修改：\n· `Crocodile/Mesh/FX_Crocodile_Ground_01.FBX.meta`（还丢着）丢的是：对面那侧的修改\n· `Crocodile/Mesh/Fx_Role_Crocodile_UL_02.FBX.meta`（还丢着）丢的是：对面那侧的修改\n\n**main** `b404ff1f4ba` 11-04 19:19 **gexianglin** 合并，丢了 136 个文件的修改：\n· `.fork/custom-commands.json`（还丢着）丢的是：gexianglin 11-04 12:20「Fork 支持 reset hard」`74fa5d22edb`；gexianglin 11-04 10:53「Fork 支持 reset hard」`c466f92089a`\n· `Crocodile/Timeline/UL_Role_Crocodile.prefab`（还丢着）丢的是：zengwei 11-03 15:14「奥义小黑盒修改」`0a091076018`\n· `Scene/OP_Baratie03/OP_Baratie03.unity`（之后又改过，要人工看）丢的是：zhanghaipeng 11-04 15:48「【scene，asset】OP_Baratie03场景重新烘焙 PerfectC」`71cc9f7c1b1`\n· `Shader/ShaderVariants/ShaderVariantWarmupList.txt`（还丢着）丢的是：gexianglin 11-03 15:20「从shader分支合并」`449f54363bc`\n· `Shader/ShaderVariants/ShaderVariantWarmupList_Battle.txt`（还丢着）丢的是：gexianglin 11-03 15:20「从shader分支合并」`449f54363bc`\n· `Shader/ShaderVariants/ShaderVariantWarmupList_Resources.txt`（还丢着）丢的是：gexianglin 11-03 15:20「从shader分支合并」`449f54363bc`\n· 另外还有 130 个文件\n\n**CBT2_bugfix** `697242bb42e` 11-04 16:23 **liangkangshuo** 合并，丢了 2 个文件的修改：\n· `StreamingAssets/Battle/Buff.bytes`（之后又改过，要人工看）丢的是：liangkangshuo 11-04 16:22「肉鸽词条冷却」`79eb2106136`\n· `StreamingAssets/Battle/BuffPVP.bytes`（之后又改过，要人工看）丢的是：liangkangshuo 11-04 16:22「肉鸽词条冷却」`79eb2106136`\n\n判断依据：某文件在被合进来的那一侧改过，合并结果却和另一侧完全一样，说明那侧修改被整份丢掉（多半是解冲突选了「用我的」）。也可能是故意保留，所以算疑似，请当事人确认。"
     }
   ],
-  "groups": [
-    "oc_87199fa15e8bc352fb9c928332d8528e",
-    "oc_d7aa3ebf93e3bf0dc5a1b4b6c3459737"
-  ],
+  "last_at": "2026-11-10T19:14:41+08:00",
+  "last_result": "从上次查到的位置起查了 0 个合并，新发现 0 条，没解决的 0 条。",
+  "run_requested": false,
+  "next_at": "",
   "ignore_paths": [
     "BattleLibrary/output/",
-    "Assets/DataTable/"
-  ]
+    "Assets/DataTable/",
+    "Assets/StreamingAssets/Battle/"
+  ],
+  "enabled": false,
+  "minutes": 60,
+  "days": 2,
+  "last_remind_at": "2026-11-10T11:13:58+08:00",
+  "scan_tips": {
+    "main": "b48241f2e8b97e78afc78d772a95f7791ae52ebf",
+    "CBT2_bugfix": "40e069a8bba48ff6850414e744efeabd5ebfe01c"
+  },
+  "judged_v2": {
+    "cb81e9adec1": {
+      "Client/Assets/Scripts/Logic/System/UIControls/NodeStateController/NodeState.cs": "像是故意保留：对方软隐藏优化已完整保留，本侧另增初始化修正"
+    },
+    "384f3f89674": {
+      "Client/.agents/skills/onepiece-combat-configure-camera/SKILL.md": "像是故意保留：鹰眼规范已纳入，仅保留更细的子阶段与同步规则"
+    },
+    "cf82e41132b": {
+      "Client/Assets/Bundle/UI/Prefab/UI_PVE/UI_PVE_SupportCharacter.prefab": "像是故意保留：动画已开启，保留的是新版切人特效路径",
+      "Client/Assets/Scripts/Logic/System/UIControls/NodeStateController/NodeState.cs": "像是故意保留：编辑器Active修复已保留，另有声明式扩展",
+      "Client/Assets/Scripts/Logic/System/UIControls/NodeStateController/UIStateController.cs": "像是故意保留：强制重应用修复已保留，并扩展声明式切换",
+      "Client/Assets/StreamingAssets/Data/RedDots.bytes": "看不出：二进制导出且主线另有更新，无法确认覆盖意图",
+      "Client/Packages/com.pwrd.devops/Devops-assetCheck/Editor/Configs/checkPathConfig.asset.meta": "像是故意保留：仅GUID不同，主线后续路径调整已重新生成",
+      "Client/_Build/CICD/Windows/generate_all_bank.ps1": "像是故意保留：多分支上传已保留，另补Unity生成meta及校验",
+      "Client/.cursor/skills/battle-dev/routes.md": "像是故意保留：保留文档与代码死亡拦截一致，旧说明已过时"
+    },
+    "6b1bf829cff": {
+      "Client/Assets/Bundle/Cutscene/Cinematic/Chapter01/Scene02/Timeline/CS_Chap01_SC02.prefab": "像是误丢：后效迁移不能替代独立的碰撞体清理",
+      "Client/Assets/Bundle/UI/Prefab/UI_Team/Character/UI_Team_Role_Ace.prefab": "像是误丢：保留编队调整时连带丢了碰撞体清理",
+      "Client/Assets/Bundle/UI/Prefab/UI_Team/Character/UI_Team_Role_Ivankov.prefab": "像是误丢：保留编队调整时连带丢了碰撞体清理",
+      "Client/Assets/Bundle/UI/Prefab/UI_Team/Character/UI_Team_Role_Mihawk.prefab": "像是误丢：构图调整不能替代独立的碰撞体清理",
+      "Client/Assets/Bundle/UI/Prefab/UI_Team/Character/UI_Team_Role_Smoker.prefab": "像是误丢：碰撞体清理明确，与编队展示调整无关",
+      "Client/Assets/Bundle/UI/Prefab/UI_Team/Character/UI_Team_Role_Zoro.prefab": "像是误丢：碰撞体清理明确，与编队展示调整无关",
+      "Client/Assets/Scripts/Logic/UI/UI_Map/UI_Map.cs": "像是误丢：本侧仅修常量报错，未替代返回栈修复",
+      "Client/Assets/Bundle/Shader/ShaderVariants/ShaderVariantWarmupList.txt": "像是故意保留：自动同步清单，采用分支内存优化后的版本"
+    },
+    "a06d9e1d01e": {
+      "Client/Assets/StreamingAssets/Battle/Buff.bytes": "看不出：二进制差异，自动合并说明未交代取舍意图",
+      "Client/Assets/StreamingAssets/Battle/BuffPVP.bytes": "看不出：二进制差异，自动合并说明未交代取舍意图"
+    }
+  }
 }

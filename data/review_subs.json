@@ -25,16 +25,64 @@
       "dm": true
     },
     {
-      "name": "徐浩然",
-      "git_author": "xuhaoran",
-      "open_id": "ou_321a1752168ccc9dd7d34bce4718cdef",
-      "dm": false
-    },
-    {
       "name": "林轩",
       "git_author": "linxuan",
       "open_id": "ou_49ddd62628f875f0c5780e02c1467eb7",
-      "dm": false
+      "dm": true
+    },
+    {
+      "name": "徐浩然",
+      "git_author": "xuhaoran",
+      "open_id": "ou_321a1752168ccc9dd7d34bce4718cdef",
+      "dm": true
+    },
+    {
+      "name": "张彦军",
+      "git_author": "zhangyanjun",
+      "open_id": "ou_e6ea8e45f631cb727335d949778abc6e",
+      "dm": true
+    },
+    {
+      "name": "陶鑫",
+      "git_author": "陶鑫",
+      "open_id": "ou_8b37869bbc2985132f3626b1f1a7cbee",
+      "dm": true
+    },
+    {
+      "name": "陈龙",
+      "git_author": "chenlong",
+      "open_id": "ou_4bce4def057e7b9377f794be0e2b722e",
+      "dm": true
+    },
+    {
+      "name": "张小苏",
+      "git_author": "zhangxiaosu",
+      "open_id": "ou_6145dbc7d0de189cefc534207a394d97",
+      "dm": true
+    },
+    {
+      "name": "乔仲毅",
+      "git_author": "qiaozhongyi",
+      "open_id": "ou_66433cbb94da627a8880fffb4cb85af9",
+      "dm": true
+    },
+    {
+      "name": "蔡佳",
+      "git_author": "caijia",
+      "open_id": "ou_2cd5764bb917da909bc0af5a1c5a6df2",
+      "dm": true
+    },
+    {
+      "name": "金倡印",
+      "git_author": "jinchangyin",
+      "open_id": "ou_1f59728262663d11e57679e86cef4fa9",
+      "dm": true
+    },
+    {
+      "name": "於明明",
+      "git_author": "yumingming",
+      "open_id": "ou_ab1a66ee854a9a03d872cb87935368cc",
+      "dm": true
     }
   ]
 }
