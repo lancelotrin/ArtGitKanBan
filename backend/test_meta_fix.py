@@ -9,7 +9,13 @@ import unittest
 from unittest import mock
 
 from bot import meta_fix
-from console import server as console
+import json
+import socket
+import struct
+import threading
+
+from boards import meta_board
+from bot import unity_bridge
 
 OLD = "a" * 32
 NEW = "b" * 32
@@ -150,27 +156,130 @@ class MetaFixTest(unittest.TestCase):
         self.assertTrue(any(line.startswith("  没处理 Assets/tex.png.meta：找不到") for line in result["details"]))
         self.assertNotIn("Assets/tex.png.meta", self.run_git("show", "--name-only", "--format=", "HEAD").split())
 
-    def test_console_actions(self) -> None:
-        log_path = os.path.join(self.root, "meta_fix.log")
-        with mock.patch("bot.echo_bot.get_git_root", return_value=self.root), \
-                mock.patch.object(console, "META_LOG_PATH", log_path):
-            status, payload = console.meta_action("scan")
-            self.assertEqual(status, 200)
-            self.assertEqual(len(payload["items"]), 2)
-            self.assertIn("guid 变了 1 个", payload["log"])
-            status, payload = console.meta_action("apply_all")
-            self.assertEqual(status, 200, payload)
-            self.assertEqual(payload["scan"]["items"], [])
-            self.assertNotIn("details", payload)
-            log = console.meta_log_text()
-            self.assertIn("提交导入设置 Assets/tex.png.meta", log)
+    def board_paths(self):
+        return (mock.patch.object(meta_board, "LOG_PATH", os.path.join(self.root, "meta_fix.log")),
+                mock.patch.object(meta_board, "PUSH_PATH", os.path.join(self.root, "meta_pushes.json")),
+                mock.patch.object(meta_board, "SCAN_PATH", os.path.join(self.root, "meta_last_scan.json")),
+                mock.patch("bot.echo_bot.get_git_root", return_value=self.root),
+                mock.patch.object(unity_bridge, "refresh", return_value={"ok": True, "message": "Unity 已刷新资源（测试）。"}))
+
+    def add_remote(self) -> str:
+        remote = os.path.join(self.root, ".remote.git")
+        subprocess.run(["git", "init", "-q", "--bare", "-b", "main", remote], check=True, capture_output=True)
+        self.run_git("remote", "add", "origin", remote)
+        self.run_git("push", "-q", "origin", "main")
+        with open(os.path.join(self.root, ".git", "info", "exclude"), "a", encoding="utf-8") as handle:
+            handle.write(".remote.git/\nmeta_*\n")
+        return remote
+
+    def test_board_check_apply_push(self) -> None:
+        remote = self.add_remote()
+        patches = self.board_paths()
+        for patch in patches:
+            patch.start()
+        try:
+            meta_board.run("check", "同事")
+            scan = meta_board.view()["scan"]
+            self.assertEqual(len(scan["items"]), 2)
+            self.assertEqual(scan["who"], "同事")
+            self.assertIn("已是最新", scan["pull"]["message"])
+            self.assertTrue(meta_board.JOB["ok"], meta_board.JOB["message"])
+            meta_board.run("apply", "同事")
+            self.assertTrue(meta_board.JOB["ok"], meta_board.JOB["message"])
+            self.assertIn("已推送到 origin/main", meta_board.JOB["message"])
+            self.assertEqual(meta_board.view()["scan"]["items"], [])
+            head = self.run_git("rev-parse", "HEAD").strip()
+            pushed = subprocess.run(["git", "-C", remote, "rev-parse", "main"], capture_output=True, text=True).stdout.strip()
+            self.assertEqual(pushed, head)
+            entry = meta_board.pushes()[0]
+            self.assertTrue(entry["pushed"])
+            self.assertEqual(entry["hash"], head)
+            self.assertEqual(entry["who"], "同事")
+            self.assertIn("Assets/hero_a.prefab", entry["files"])
+            self.assertTrue(entry["message"].startswith("meta 处理："))
+            log = meta_board.log_text()
+            self.assertIn("开始：全部处理、提交并推送（同事 点的）", log)
             self.assertIn("已换 Assets/hero_a.prefab（2 处）", log)
-            self.assertIn("不动 Assets/old.prefab：重复提交之前就引用了", log)
-            # 失败不报错码，写进日志
-            status, payload = console.meta_action("apply_all")
-            self.assertEqual(status, 200)
-            self.assertFalse(payload["ok"])
-            self.assertIn("处理失败：没有能处理的 meta。", payload["log"])
+            self.assertIn("推送 ", log)
+            # 没东西可处理：记失败，不卡在进行中
+            meta_board.run("apply", "同事")
+            self.assertFalse(meta_board.JOB["ok"])
+            self.assertFalse(meta_board.JOB["running"])
+            self.assertIn("没有能处理的 meta", meta_board.JOB["message"])
+        finally:
+            for patch in patches:
+                patch.stop()
+
+    def test_board_push_failure_and_retry(self) -> None:
+        patches = self.board_paths()
+        for patch in patches:
+            patch.start()
+        try:
+            meta_board.run("apply", "同事")  # 没有 origin，推送失败，提交留在本地
+            self.assertFalse(meta_board.JOB["ok"])
+            self.assertIn("推送到 origin/main 失败", meta_board.JOB["message"])
+            self.assertFalse(meta_board.pushes()[0]["pushed"])
+            self.add_remote()
+            meta_board.run("push", "同事")
+            self.assertTrue(meta_board.JOB["ok"], meta_board.JOB["message"])
+            self.assertEqual([entry["pushed"] for entry in meta_board.pushes()], [True, False])
+        finally:
+            for patch in patches:
+                patch.stop()
+
+    def test_pull_fast_forwards_and_keeps_local_changes(self) -> None:
+        remote = self.add_remote()
+        other = os.path.join(self.root, ".other")
+        subprocess.run(["git", "clone", "-q", remote, other], check=True, capture_output=True)
+        with open(os.path.join(other, "Assets", "new.txt"), "w", encoding="utf-8") as handle:
+            handle.write("new\n")
+        for args in (["add", "-A"], ["-c", "user.name=x", "-c", "user.email=x@x", "commit", "-q", "-m", "别人的"], ["push", "-q"]):
+            subprocess.run(["git", "-C", other, *args], check=True, capture_output=True)
+        result = meta_fix.pull(self.root, "origin", ["main"])
+        self.assertTrue(result["ok"], result)
+        self.assertIn("1 个提交", result["message"])
+        self.assertTrue(os.path.exists(os.path.join(self.root, "Assets", "new.txt")))
+        self.assertEqual(meta_fix.guid_of(self.read("Assets/hero.mat.meta")), NEW)  # 本地修改还在
+        self.assertFalse(meta_fix.pull(self.root, "origin", ["dev"])["ok"])
+
+    def test_unity_bridge_refresh(self) -> None:
+        server = socket.socket()
+        server.bind(("127.0.0.1", 0))
+        server.listen(1)
+        port = server.getsockname()[1]
+        seen = {}
+
+        def serve() -> None:
+            conn, _ = server.accept()
+            with conn:
+                conn.sendall(b"WELCOME UNITY-MCP 1 FRAMING=1\n")
+                size = struct.unpack(">Q", conn.recv(8))[0]
+                seen.update(json.loads(conn.recv(size)))
+                reply = json.dumps({"status": "success", "result": {"success": True, "message": "Refresh requested.",
+                                                                    "data": {"resulting_state": "idle"}}}).encode()
+                conn.sendall(struct.pack(">Q", len(reply)) + reply)
+
+        thread = threading.Thread(target=serve, daemon=True)
+        thread.start()
+        status_dir = os.path.join(self.root, ".unity-mcp")
+        os.makedirs(status_dir)
+        with open(os.path.join(status_dir, "unity-mcp-status-whatever.json"), "w", encoding="utf-8") as handle:
+            json.dump({"unity_port": port, "project_path": unity_bridge.data_path(self.root), "reloading": False}, handle)
+        with mock.patch.dict(os.environ, {"UNITY_MCP_STATUS_DIR": status_dir}):
+            result = unity_bridge.refresh(self.root)
+        thread.join(5)
+        server.close()
+        self.assertTrue(result["ok"], result)
+        self.assertIn(f"端口 {port}", result["message"])
+        self.assertEqual(seen["type"], "refresh_unity")
+        self.assertEqual(seen["params"]["mode"], "force")
+
+    def test_unity_bridge_not_running(self) -> None:
+        with mock.patch.dict(os.environ, {"UNITY_MCP_STATUS_DIR": os.path.join(self.root, "none")}), \
+                mock.patch.object(unity_bridge, "DEFAULT_PORT", 1):
+            result = unity_bridge.refresh(self.root)
+        self.assertFalse(result["ok"])
+        self.assertIn("连不上 Unity", result["message"])
 
 if __name__ == "__main__":
     unittest.main()

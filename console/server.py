@@ -493,65 +493,6 @@ def _reply(payload, status: int = 200) -> tuple:
     return status, payload
 
 
-META_LOG_PATH = os.path.join(DATA_DIR, "meta_fix.log")
-
-
-def meta_log(lines: list) -> None:
-    """meta 处理日志单独一个文件（bot.log 是大豆进程在写），网页「meta 改动」里显示。"""
-    stamp = time.strftime("%Y-%m-%d %H:%M:%S")
-    try:
-        with open(META_LOG_PATH, "a", encoding="utf-8") as handle:
-            for index, line in enumerate(lines):
-                handle.write((f"[{stamp}] " if index == 0 else "") + line + "\n")
-    except OSError:
-        pass
-
-
-def meta_log_text(count: int = 200) -> str:
-    try:
-        with open(META_LOG_PATH, encoding="utf-8", errors="replace") as handle:
-            return "\n".join(handle.read().splitlines()[-count:])
-    except OSError:
-        return ""
-
-
-def meta_action(action: str, data: dict | None = None, who: str = "") -> tuple:
-    """本地 .meta 改动：scan 只读；apply_all 全部处理并提交（不推送），和拉代码、切分支共用锁。结果都写进 meta 日志。"""
-    from bot import echo_bot, meta_fix
-    root = echo_bot.get_git_root()
-    if action == "scan":
-        try:
-            view = meta_fix.scan(root)
-        except RuntimeError as error:
-            meta_log([f"检查失败：{error}"])
-            return _reply({"error": str(error), "log": meta_log_text()}, 400)
-        kinds = [item["kind"] for item in view["items"]]
-        timing = "，".join(f"{name} {sec} 秒" for name, sec in view["timing"].items())
-        meta_log([f"检查 {root}：导入设置 {kinds.count('import')} 个，guid 变了 {kinds.count('guid')} 个，"
-                  f"读不到 guid {kinds.count('unknown')} 个，用时 {view['seconds']} 秒（{timing}）"])
-        return _reply(dict(view, root=root, log=meta_log_text()))
-    if action != "apply_all":
-        return _reply({"error": "不认识的操作。"}, 400)
-    if not echo_bot._pull_lock.acquire(blocking=False):
-        meta_log(["没处理：正在拉代码或切分支。"])
-        return _reply({"ok": False, "message": "正在拉代码或切分支，等它做完再处理。", "log": meta_log_text()})
-    by = f"（{who} 点的）" if who else ""
-    try:
-        result = meta_fix.apply_all(root)
-    except (ValueError, RuntimeError, OSError) as error:
-        meta_log([f"处理失败{by}：{error}"])
-        return _reply({"ok": False, "message": str(error), "log": meta_log_text()})
-    finally:
-        echo_bot._pull_lock.release()
-    _branch_cache["at"] = 0.0
-    with _status_lock:
-        _status_cache["at"] = 0.0
-        _status_cache["data"] = None
-    details = result.pop("details")
-    meta_log([details[0] + by] + details[1:])
-    return _reply(dict(result, log=meta_log_text()))
-
-
 def admin_get(path: str, user: dict) -> tuple:
     """管理员的读接口，返回 (状态码, JSON)。新后端 /api/v1/admin/* 调它。"""
     if path == "/api/users":
@@ -1022,7 +963,7 @@ def sites_view(user: dict = None) -> dict:
         ("AI 聊天", "✦", "#7c5cff", "/chat", "直接和大豆配好的大模型聊天。对话存在服务器上，每个人只看得到自己的。", "#sec-models"),
         ("监修改动", "📝", "#0b7285", "/docwatch", "版权方监修文档的每次改动：改了什么、AI 分析涉及哪些功能、该谁跟进、通知了谁。只读。", ""),
         ("热心市民", "🙋", "#f03e3e", "/help", "遇到问题不知道找谁：先查常见问题库，再让 AI 分析该找哪个部门的谁；也能按部门翻通讯录。", ""),
-        ("meta 检查", "◈", "#1971c2", "/meta", "部署机工程里本地改过的 .meta：导入设置直接提交，guid 重复的把该换的引用换成本地新 guid。登录了都能检查和提交。", ""),
+        ("meta 检查", "◈", "#1971c2", "/meta", "部署机工程里本地改过的 .meta：导入设置直接提交，guid 重复的把该换的引用换成本地新 guid，提交后自动推送。检查前先拉最新并让 Unity 刷新资源。登录了都能用。", ""),
     )
     sites = [{"name": name, "icon": icon, "color": color, "port": port, "desc": desc, "manage": manage,
               "url": f"{web_root}{port}/", "local": f"{local_root}{port}/", "online": True}

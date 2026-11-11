@@ -113,6 +113,15 @@ class BoardsApiTest(unittest.TestCase):
 
     # ---------- meta 检查 ----------
 
+    def wait_meta(self) -> dict:
+        import time
+        for _ in range(100):
+            data = self.user.get("/api/v1/meta").json()
+            if not data["job"]["running"]:
+                return data
+            time.sleep(0.1)
+        self.fail("meta 任务没跑完")
+
     def test_meta(self) -> None:
         repo = os.path.join(self.tmp.name, "repo")
         os.makedirs(os.path.join(repo, "Assets"))
@@ -127,17 +136,34 @@ class BoardsApiTest(unittest.TestCase):
         git("commit", "-q", "-m", "init")
         with open(meta_path, "w", encoding="utf-8") as handle:
             handle.write("fileFormatVersion: 2\nguid: " + "a" * 32 + "\nmaxTextureSize: 1024\n")
-        with mock.patch("bot.echo_bot.get_git_root", return_value=repo), \
-                mock.patch.object(console, "META_LOG_PATH", os.path.join(self.tmp.name, "meta_fix.log")):
-            data = self.user.get("/api/v1/meta").json()
-            self.assertEqual([(item["kind"], item["path"]) for item in data["items"]], [("import", "Assets/a.png.meta")])
-            self.assertIn("导入设置 1 个", self.user.get("/api/v1/meta/log").json()["log"])
-            data = self.user.post("/api/v1/meta/apply").json()
-            self.assertTrue(data["ok"])
+        from boards import meta_board
+        from bot import unity_bridge
+        patches = (mock.patch("bot.echo_bot.get_git_root", return_value=repo),
+                   mock.patch.object(meta_board, "LOG_PATH", os.path.join(self.tmp.name, "meta_fix.log")),
+                   mock.patch.object(meta_board, "PUSH_PATH", os.path.join(self.tmp.name, "meta_pushes.json")),
+                   mock.patch.object(meta_board, "SCAN_PATH", os.path.join(self.tmp.name, "meta_last_scan.json")),
+                   mock.patch.object(unity_bridge, "refresh", return_value={"ok": False, "message": "连不上 Unity（测试）"}))
+        for patch in patches:
+            patch.start()
+        try:
+            self.assertIsNone(self.user.get("/api/v1/meta").json()["scan"])  # 打开页面不自动检查
+            self.assertTrue(self.user.post("/api/v1/meta/check").json()["ok"])
+            data = self.wait_meta()
+            self.assertEqual([(item["kind"], item["path"]) for item in data["scan"]["items"]], [("import", "Assets/a.png.meta")])
+            self.assertIn("连不上 Unity（测试）", data["job"]["message"])
+            self.assertTrue(self.user.post("/api/v1/meta/apply").json()["ok"])
+            data = self.wait_meta()
             self.assertEqual(data["scan"]["items"], [])
+            self.assertIn("推送到 origin/", data["job"]["message"])  # 测试仓库没有远端，推送失败
+            pushes = self.user.get("/api/v1/meta/pushes").json()["items"]
+            self.assertEqual(pushes[0]["files"], ["Assets/a.png.meta"])
+            self.assertEqual(pushes[0]["who"], "同事")
             log = self.user.get("/api/v1/meta/log").json()["log"]
             self.assertIn("（同事 点的）", log)
             self.assertIn("提交导入设置 Assets/a.png.meta", log)
+        finally:
+            for patch in patches:
+                patch.stop()
         board_access.set_hidden("/meta", True)
         self.assertEqual(self.user.get("/api/v1/meta").status_code, 403)
 

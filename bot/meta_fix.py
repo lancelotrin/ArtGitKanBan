@@ -9,7 +9,7 @@
 
 一个按钮全部处理，一次提交。
 
-只 commit，不 push、不拉、不切分支。调用方负责和拉代码互斥。
+apply_all 只 commit；push() 把当前分支推到远端（跳过 pre-push）。不拉、不切分支。调用方负责和拉代码互斥。
 """
 import os
 import re
@@ -22,7 +22,8 @@ GUID_LINE = re.compile(r"(?m)^guid:\s*([0-9a-fA-F]{32})\s*$")
 WORKERS = 8
 
 
-def git(root: str, args: list, timeout: int = 60) -> tuple:
+def git(root: str, args: list, timeout: int = 60, stderr: bool = False) -> tuple:
+    """返回 (成功, 输出)。失败时输出含 stderr；stderr=True 时成功也带上 stderr（push 的结果写在 stderr）。"""
     try:
         result = subprocess.run(
             ["git", "-C", root, "-c", "core.quotepath=false"] + args,
@@ -33,6 +34,8 @@ def git(root: str, args: list, timeout: int = 60) -> tuple:
         return False, str(error)
     if result.returncode != 0:
         return False, ((result.stdout or "") + (result.stderr or "")).strip()
+    if stderr:
+        return True, ((result.stdout or "") + (result.stderr or "")).strip()
     return True, result.stdout or ""
 
 
@@ -283,7 +286,7 @@ def apply_all(root: str) -> dict:
                 handle.write(data)
         raise RuntimeError(f"{error}\n替换过的 {len(changed)} 个文件已改回原样。")
     kept = sum(1 for item in fixable for ref in item["refs"] if not ref["replace"])
-    text = f"已提交（{short}），没推送：" + "；".join(parts) + "。"
+    text = f"已提交（{short}）：" + "；".join(parts) + "。"
     if kept:
         text += f"有 {kept} 个引用旧 guid 的文件没改。"
     if skipped:
@@ -308,3 +311,47 @@ def apply_all(root: str) -> dict:
     done = set(imports) | {item["path"] for item in fixable}
     remaining = {"items": [item for item in items if item["path"] not in done]}
     return {"ok": True, "commit": short, "paths": paths, "message": text, "details": details, "scan": remaining}
+
+
+def commit_info(root: str, rev: str = "HEAD") -> dict:
+    """提交的详细信息：提交号、作者、时间、说明、改了哪些文件。"""
+    ok, out = git(root, ["show", "-s", "--format=%H%x1f%h%x1f%an%x1f%ad%x1f%B", "--date=format:%Y-%m-%d %H:%M:%S", rev])
+    if not ok:
+        return {}
+    full, short, author, date, body = (out.split("\x1f", 4) + [""] * 5)[:5]
+    ok, names = git(root, ["show", "--name-only", "--no-renames", "--format=", "-z", rev])
+    files = [name for name in names.split("\0") if name] if ok else []
+    return {"hash": full.strip(), "short": short.strip(), "author": author, "date": date,
+            "message": body.strip(), "files": files}
+
+
+def push(root: str, remote: str = "origin") -> dict:
+    """把当前分支推到远端同名分支。不拉、不强推；远端有新提交会被拒，留给人处理。"""
+    ok, branch = git(root, ["rev-parse", "--abbrev-ref", "HEAD"])
+    branch = branch.strip()
+    if not ok or not branch or branch == "HEAD":
+        return {"ok": False, "branch": branch, "remote": remote, "output": "读不到当前分支（可能是游离 HEAD），没推送。"}
+    ok, out = git(root, ["push", "--no-verify", "--porcelain", remote, f"HEAD:refs/heads/{branch}"], 600, stderr=True)
+    return {"ok": ok, "branch": branch, "remote": remote, "output": out[-1500:]}
+
+
+def pull(root: str, remote: str, branches: list) -> dict:
+    """把当前分支快进到远端最新。只快进、不清本地修改；本地修改和远端新提交冲突就不拉，原样报出来。"""
+    ok, branch = git(root, ["rev-parse", "--abbrev-ref", "HEAD"])
+    branch = branch.strip()
+    if not ok or not branch or branch == "HEAD":
+        return {"ok": False, "message": "读不到当前分支（可能是游离 HEAD），没拉。"}
+    if branch not in branches:
+        return {"ok": False, "message": f"当前分支 {branch} 不在 .env 的 GIT_BRANCHES（{'、'.join(branches)}）里，没拉。"}
+    ok, before = git(root, ["rev-parse", "--short", "HEAD"])
+    ok, out = git(root, ["fetch", remote, branch], 600, stderr=True)
+    if not ok:
+        return {"ok": False, "message": f"fetch {remote}/{branch} 失败：{out[-500:]}"}
+    ok, out = git(root, ["merge", "--ff-only", "FETCH_HEAD"], 600, stderr=True)
+    if not ok:
+        return {"ok": False, "message": f"{branch} 没能快进到 {remote}/{branch}（本地有远端没有的提交，或本地修改和远端新提交冲突），没拉：{out[-500:]}"}
+    ok, after = git(root, ["rev-parse", "--short", "HEAD"])
+    if before.strip() == after.strip():
+        return {"ok": True, "message": f"{branch} 已是最新（{after.strip()}）。"}
+    ok, count = git(root, ["rev-list", "--count", f"{before.strip()}..{after.strip()}"])
+    return {"ok": True, "message": f"{branch} 从 {before.strip()} 快进到 {after.strip()}（{count.strip()} 个提交）。"}

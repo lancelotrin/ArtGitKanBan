@@ -20,8 +20,20 @@ interface Item {
   refs?: Ref[];
   grep_done?: boolean;
 }
-interface Scan { root?: string; items: Item[]; seconds?: number; timing?: Record<string, number> }
-interface ApplyResult { ok?: boolean; message?: string; commit?: string; scan?: Scan }
+interface Note { ok: boolean; message: string }
+interface Scan {
+  root?: string; items: Item[]; seconds?: number; timing?: Record<string, number>;
+  checked_at?: string; who?: string; pull?: Note; unity?: Note;
+}
+interface Job {
+  running: boolean; action: string; title: string; step: string; who: string;
+  started_at: string; finished_at: string; ok: boolean | null; message: string;
+}
+interface View { job: Job; scan: Scan | null }
+interface Push {
+  hash?: string; short?: string; author?: string; date?: string; message?: string; files?: string[];
+  at: string; who: string; branch: string; remote: string; pushed: boolean; output: string;
+}
 
 const commitOf = (item: Item) => item.commit as Commit | undefined;
 const fixableOf = (item: Item) => item.kind === "guid" && !!commitOf(item)?.hash && !!item.grep_done;
@@ -85,18 +97,45 @@ function GuidCard({ item }: { item: Item }) {
   );
 }
 
+function PushRow({ push, canRetry, onRetry, busy }: { push: Push; canRetry: boolean; onRetry: () => void; busy: boolean }) {
+  const [open, setOpen] = useState(false);
+  const files = push.files || [];
+  const [title, ...body] = String(push.message || "").split("\n");
+  return (
+    <div className={"card " + (push.pushed ? "s-ok" : "s-bad")}>
+      <div className="push-top">
+        <span className={"pill " + (push.pushed ? "p-ok" : "p-bad")}>{push.pushed ? "已推送" : "推送失败"}</span>
+        <b>{push.short || "?"}</b>
+        <span className="sub">{push.branch} → {push.remote}/{push.branch}</span>
+        <span className="sub">{push.at}{push.who ? ` · ${push.who} 点的` : ""}</span>
+        {canRetry && <button className="ghost" disabled={busy} onClick={onRetry}>再推一次</button>}
+      </div>
+      <div className="subj">{title}</div>
+      {body.filter((line) => line.trim()).length > 0 && <div className="sub pre">{body.join("\n").trim()}</div>}
+      <div className="sub">提交号 <code>{push.hash}</code> · 作者 {push.author} · {push.date}</div>
+      <button className="text" onClick={() => setOpen(!open)}>{open ? "收起" : `改了 ${files.length} 个文件，展开`}</button>
+      {open && <div className="refs">{files.map((file) => <div className="ref" key={file}><code>{file}</code></div>)}</div>}
+      {!push.pushed && push.output && <pre className="out">{push.output}</pre>}
+    </div>
+  );
+}
+
 export default function MetaBoard() {
   usePageTitle("meta 检查");
   const client = useQueryClient();
-  const scanQuery = useQuery({
-    queryKey: ["meta-scan"], queryFn: () => api<Scan>("/meta"),
-    staleTime: Infinity, refetchOnWindowFocus: false, retry: false,
+  // 打开页面只读上次结果和进度，不自动检查；有任务在跑就每 2 秒刷新一次。
+  const viewQuery = useQuery({
+    queryKey: ["meta-view"], queryFn: () => api<View>("/meta"),
+    refetchInterval: (query) => (query.state.data?.job.running ? 2000 : 30_000),
   });
-  const logQuery = useQuery({ queryKey: ["meta-log"], queryFn: () => api<{ log: string }>("/meta/log"), refetchOnWindowFocus: false });
-  const [message, setMessage] = useState<{ text: string; bad?: boolean }>({ text: "" });
-  const [applying, setApplying] = useState(false);
-  const scan = scanQuery.data;
-  const busy = applying || scanQuery.isFetching;
+  const running = !!viewQuery.data?.job.running;
+  const logQuery = useQuery({ queryKey: ["meta-log"], queryFn: () => api<{ log: string }>("/meta/log"), refetchInterval: running ? 2000 : 30_000 });
+  const pushQuery = useQuery({ queryKey: ["meta-pushes"], queryFn: () => api<{ items: Push[] }>("/meta/pushes"), refetchInterval: running ? 4000 : 30_000 });
+  const [error, setError] = useState("");
+  const [sending, setSending] = useState(false);
+  const job = viewQuery.data?.job;
+  const scan = viewQuery.data?.scan || undefined;
+  const busy = sending || running;
 
   const items = scan?.items || [];
   const imports = items.filter((item) => item.kind === "import");
@@ -104,32 +143,29 @@ export default function MetaBoard() {
   const fixable = guids.filter(fixableOf);
   const unknown = items.filter((item) => item.kind === "unknown");
   const files = fixable.reduce((sum, item) => sum + (item.refs || []).filter((ref) => ref.replace).length, 0);
+  const pushes = pushQuery.data?.items || [];
 
-  // 不弹窗：结果写进页面上的提示和下面的日志。
-  const recheck = async () => {
-    setMessage({ text: "" });
-    await scanQuery.refetch();
-    await logQuery.refetch();
-  };
-  const applyAll = async () => {
-    setApplying(true);
+  // 不弹窗：开始后看上面的进度、下面的日志。
+  const start = async (action: "check" | "apply" | "push") => {
+    setSending(true);
+    setError("");
     try {
-      const result = await api<ApplyResult>("/meta/apply", { method: "POST", body: JSON.stringify({}) });
-      setMessage({ text: result.message || "", bad: result.ok === false });
-      if (result.scan) client.setQueryData(["meta-scan"], (old: Scan | undefined) => ({ ...old, ...result.scan! }));
-    } catch (error) {
-      setMessage({ text: (error as Error).message || "没完成", bad: true });
+      const result = await api<{ ok: boolean; message: string }>("/meta/" + action, { method: "POST", body: JSON.stringify({}) });
+      if (!result.ok) setError(result.message);
+    } catch (e) {
+      setError((e as Error).message || "没开始");
     } finally {
-      setApplying(false);
-      await logQuery.refetch();
+      setSending(false);
+      await client.invalidateQueries({ queryKey: ["meta-view"] });
+      await client.invalidateQueries({ queryKey: ["meta-log"] });
     }
   };
 
   const stats: [string, number | string, string][] = [
-    ["", scan ? imports.length : "…", "只改导入设置"],
-    ["warn", scan ? guids.length : "…", "guid 变了"],
-    ["ok", scan ? files : "…", "要换引用的文件"],
-    ["bad", scan ? unknown.length + guids.length - fixable.length : "…", "不能自动处理"],
+    ["", scan ? imports.length : "–", "只改导入设置"],
+    ["warn", scan ? guids.length : "–", "guid 变了"],
+    ["ok", scan ? files : "–", "要换引用的文件"],
+    ["bad", scan ? unknown.length + guids.length - fixable.length : "–", "不能自动处理"],
   ];
   const timing = scan?.timing ? Object.entries(scan.timing).map(([name, sec]) => `${name} ${sec} 秒`).join("，") : "";
 
@@ -141,12 +177,12 @@ export default function MetaBoard() {
             <div className="brand"><i>豆</i>大豆</div>
             <h1>meta 检查</h1>
             <p>
-              部署机工程里本地改过的 .meta。只改导入设置的直接提交；guid 变了的，找工作区里也用这个旧 guid 的别的 meta（和路径无关），
-              两边里后拿到这个 guid 的提交是重复提交，之后开始的引用换成本地新 guid，之前的是之前那个资源的，不动。
+              检查前先把 .env 配的工程当前分支拉到最新（只快进），再让 Unity 刷新资源重新生成 meta，然后查本地改过的 .meta。
+              只改导入设置的直接提交；guid 和别的 meta 重复的，两边里后拿到这个 guid 的提交是重复提交，之后开始的引用换成本地新 guid，之前的不动。提交后自动推送。
             </p>
             <div className="scan">
-              {scan?.root && <span>工程 {scan.root} · </span>}
-              {scanQuery.isFetching ? "检查中…" : scan?.seconds !== undefined ? `检查用时 ${scan.seconds} 秒${timing ? `（${timing}）` : ""}` : ""}
+              {scan?.root && <span>工程 {scan.root}</span>}
+              {scan?.checked_at && <span> · 上次检查 {scan.checked_at}{scan.who ? `（${scan.who}）` : ""}，用时 {scan.seconds} 秒{timing ? `（${timing}）` : ""}</span>}
             </div>
           </div>
           <svg className="art" viewBox="0 0 120 120" aria-hidden="true">
@@ -165,16 +201,30 @@ export default function MetaBoard() {
           ))}
         </div>
         <div className="bar">
-          <button disabled={busy} onClick={recheck}>{scanQuery.isFetching ? "检查中…" : "重新检查"}</button>
-          <button className="primary" disabled={busy || !scan || (!imports.length && !fixable.length)} onClick={applyAll}>
-            {applying ? "处理中…" : `全部处理并提交（导入设置 ${imports.length} 个，guid ${fixable.length} 个，换 ${files} 个文件）`}
+          <button disabled={busy} onClick={() => start("check")}>拉最新、刷新 Unity 并检查</button>
+          <button className="primary" disabled={busy || !scan || (!imports.length && !fixable.length)} onClick={() => start("apply")}>
+            {`全部处理、提交并推送（导入设置 ${imports.length} 个，guid ${fixable.length} 个，换 ${files} 个文件）`}
           </button>
-          <span className="sub">只 commit 不 push，跳过 pre-commit。「拉代码」会清掉本地修改，先处理完再拉。</span>
+          <span className="sub">提交和推送都跳过工程的 git 钩子。</span>
         </div>
-        {message.text && <div className={"msg" + (message.bad ? " bad" : "")}>{message.text}</div>}
-        {scanQuery.error && <div className="msg bad">{(scanQuery.error as Error).message}</div>}
+        {running && job && (
+          <div className="msg run">
+            <span className="spin" />{job.who ? `${job.who} 点了` : ""}「{job.title}」，{job.started_at.slice(11)} 开始，现在：{job.step || "排队"}
+          </div>
+        )}
+        {!running && job?.finished_at && (
+          <div className={"msg" + (job.ok ? "" : " bad")}>{job.finished_at.slice(5)} {job.title}：{job.message}</div>
+        )}
+        {error && <div className="msg bad">{error}</div>}
+        {viewQuery.error && <div className="msg bad">{(viewQuery.error as Error).message}</div>}
+        {scan && (scan.pull?.ok === false || scan.unity?.ok === false) && (
+          <div className="msg warn">
+            上次检查时：{[scan.pull, scan.unity].filter((note) => note && !note.ok).map((note) => note!.message).join(" ")}
+          </div>
+        )}
 
-        {scan && !items.length && <div className="empty"><div className="big">✓</div>没有本地改过的 meta。</div>}
+        {!scan && !running && <div className="empty"><div className="big">◈</div>还没检查过，点「拉最新、刷新 Unity 并检查」。</div>}
+        {scan && !items.length && <div className="empty"><div className="big">✓</div>上次检查没有本地改过的 meta。</div>}
         {imports.length > 0 && (
           <>
             <div className="day">只改导入设置 · {imports.length} 个</div>
@@ -193,6 +243,12 @@ export default function MetaBoard() {
             </div>
           </>
         )}
+
+        <div className="day">推送记录 · {pushes.length} 条</div>
+        {pushes.length ? pushes.map((push, index) => (
+          <PushRow key={push.at + (push.hash || "")} push={push} busy={busy}
+            canRetry={index === 0 && !push.pushed} onRetry={() => start("push")} />
+        )) : <div className="sub">还没有推送过。</div>}
 
         <div className="day">日志</div>
         <pre className="log">{logQuery.data?.log || "还没有记录。"}</pre>

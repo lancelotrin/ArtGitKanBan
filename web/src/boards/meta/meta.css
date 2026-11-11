@@ -57,3 +57,16 @@
   .meta-page .stats { grid-template-columns:repeat(2,1fr); }
   .meta-page .art { display:none; }
 }
+.meta-page .msg.warn { background:var(--warn-soft); color:var(--warn); }
+.meta-page .msg.run { background:#e7f5ff; color:var(--brand); display:flex; align-items:center; gap:8px; }
+.meta-page .spin { width:14px; height:14px; border-radius:50%; border:2px solid #a5d8ff; border-top-color:var(--brand); animation:meta-spin 1s linear infinite; flex:none; }
+@keyframes meta-spin { to { transform:rotate(360deg); } }
+.meta-page .push-top { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+.meta-page .pill { border-radius:999px; padding:1px 10px; font-size:12px; font-weight:600; }
+.meta-page .p-ok { background:var(--ok-soft); color:var(--ok); }
+.meta-page .p-bad { background:var(--bad-soft); color:var(--bad); }
+.meta-page .push-top button.ghost { margin-left:auto; border:1px solid var(--line); background:#fff; border-radius:9px; padding:3px 12px; cursor:pointer; }
+.meta-page .subj { margin:6px 0 2px; font-weight:600; word-break:break-all; }
+.meta-page .pre { white-space:pre-wrap; }
+.meta-page button.text { border:none; background:none; padding:0; margin-top:4px; color:var(--brand); cursor:pointer; font-size:12.5px; }
+.meta-page .out { background:#fff5f5; color:#a61e1e; border-radius:10px; padding:8px 12px; margin:8px 0 0; font:12px/1.5 Consolas,"Cascadia Mono",monospace; white-space:pre-wrap; word-break:break-all; }
