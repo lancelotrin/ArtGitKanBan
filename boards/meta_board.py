@@ -17,6 +17,7 @@ from common.paths import DATA_DIR
 LOG_PATH = os.path.join(DATA_DIR, "meta_fix.log")
 PUSH_PATH = os.path.join(DATA_DIR, "meta_pushes.json")
 SCAN_PATH = os.path.join(DATA_DIR, "meta_last_scan.json")
+NOTIFY_PATH = os.path.join(DATA_DIR, "meta_notified.json")
 ACTIONS = {"check": "拉最新、刷新 Unity 并检查", "apply": "全部处理、提交并推送", "push": "再推一次"}
 
 _job_lock = threading.Lock()
@@ -106,10 +107,81 @@ def do_check(root: str, who: str) -> tuple:
     summary = (f"导入设置 {kinds.count('import')} 个，guid 变了 {kinds.count('guid')} 个，"
                f"读不到 guid {kinds.count('unknown')} 个")
     log([f"  检查完：{summary}，用时 {scan['seconds']} 秒（{timing}）"])
+    notify_dups(scan["items"])
     write_json(SCAN_PATH, dict(scan, root=root, checked_at=now(), who=who,
                                pull=pulled, unity=refreshed))
     notes = [note["message"] for note in (pulled, refreshed) if not note["ok"]]
     return True, f"检查完：{summary}。" + ("".join(notes) and " 注意：" + " ".join(notes))
+
+
+def author_open_id(author: str) -> tuple:
+    """git 作者 → 飞书 open_id：先看复盘名单（git 作者名对应的 open_id），没有再按作者名当飞书姓名找。"""
+    from bot import echo_bot
+    for sub in echo_bot.load_review_subs():
+        if str(sub.get("git_author") or "").casefold() == author.casefold():
+            if sub.get("open_id"):
+                return sub["open_id"], str(sub.get("name") or author)
+            open_id, _why = echo_bot.find_open_id_by_name(str(sub.get("name") or ""))
+            if open_id:
+                return open_id, str(sub.get("name") or author)
+    open_id, _why = echo_bot.find_open_id_by_name(author)
+    return open_id, author
+
+
+def dup_text(commit: dict, items: list) -> str:
+    lines = [f"meta 检查发现你的提交 **{commit.get('short', '')}**（{commit.get('date', '')} {commit.get('subject', '')}）"
+             f"导致 guid 重复，下面这些 meta 的 guid 和别的资源撞了："]
+    for item in items:
+        mine = commit.get("mine_later")
+        meta_path = item["path"] if mine else "、".join(commit.get("dup_paths") or [])
+        other = "、".join(commit.get("dup_paths") or []) if mine else item["path"]
+        lines.append(f"- `{meta_path}` 和 `{other}` 都是 guid `{item['old_guid']}`")
+    lines.append("以后复制资源请连 meta 一起让 Unity 重新生成（不要直接拷 .meta 文件）。"
+                 "这次的会在 meta 检查页里统一处理，有疑问找工具组。")
+    return "\n".join(lines)
+
+
+def notify_dups(items: list) -> None:
+    """guid 重复的，飞书私聊重复提交的作者。同一个提交 + guid 只发一次，发过的记在 meta_notified.json。"""
+    from bot import echo_bot
+    sent = read_json(NOTIFY_PATH, {})
+    sent = sent if isinstance(sent, dict) else {}
+    groups = {}
+    for item in items:
+        commit = item.get("commit") or {}
+        if item.get("kind") == "guid" and commit.get("hash") and commit.get("author"):
+            groups.setdefault(commit["hash"], (commit, []))[1].append(item)
+    changed = False
+    for full, (commit, group) in groups.items():
+        fresh = [item for item in group if f"{full}:{item['old_guid']}" not in sent]
+        for item in group:
+            if f"{full}:{item['old_guid']}" in sent:
+                item["notified"] = sent[f"{full}:{item['old_guid']}"]
+        if not fresh:
+            continue
+        author = commit["author"]
+        try:
+            open_id, name = author_open_id(author)
+        except Exception as error:  # 查人失败不影响检查
+            open_id, name = "", author
+            log([f"  查 {author} 的飞书账号失败：{error}"])
+        if not open_id:
+            log([f"  guid 重复：找不到提交 {commit.get('short', '')} 作者 {author} 的飞书账号，没通知"
+                 "（在复盘名单里登记 git 作者名和 open_id 就能发）"])
+            for item in fresh:
+                item["notified"] = {"ok": False, "name": author, "message": "找不到飞书账号，没通知"}
+            continue
+        key = f"metadup-{commit.get('short', '')}-{fresh[0]['old_guid'][:8]}"
+        ok = echo_bot.send_review_dm(open_id, "meta guid 重复", dup_text(commit, fresh), key)
+        note = {"ok": ok, "name": name, "at": now(), "message": f"已飞书通知 {name}" if ok else f"飞书通知 {name} 失败"}
+        log([f"  guid 重复：提交 {commit.get('short', '')} {note['message']}（{len(fresh)} 个 meta）"])
+        for item in fresh:
+            item["notified"] = note
+            if ok:
+                sent[f"{full}:{item['old_guid']}"] = note
+                changed = True
+    if changed:
+        write_json(NOTIFY_PATH, sent)
 
 
 def do_push(root: str, who: str) -> dict:

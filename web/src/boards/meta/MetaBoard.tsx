@@ -19,6 +19,7 @@ interface Item {
   commit?: Commit | Record<string, never>;
   refs?: Ref[];
   grep_done?: boolean;
+  notified?: { ok: boolean; name: string; message: string; at?: string };
 }
 interface Note { ok: boolean; message: string }
 interface Scan {
@@ -72,6 +73,11 @@ function GuidCard({ item }: { item: Item }) {
         <>
           <div className="sub">旧 guid 和这些 meta 重复：{(commit.dup_paths || []).map((dup) => <code key={dup}>{dup}</code>)}</div>
           <div className="sub">重复提交（两边里后拿到这个 guid 的）：<b>{commit.short}</b> {commit.author} {commit.date} {commit.subject}</div>
+          {item.notified && (
+            <div className={item.notified.ok ? "sub" : "bad"}>
+              {item.notified.message}{item.notified.at ? `（${item.notified.at}）` : ""}
+            </div>
+          )}
           {commit.mine_later ? (
             <div className="sub">
               本地这个 meta 是后来的；另一个在 {commit.other?.short} {commit.other?.author} {commit.other?.date} 就有这个 guid。

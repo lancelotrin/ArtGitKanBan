@@ -161,6 +161,9 @@ class MetaFixTest(unittest.TestCase):
         return (mock.patch.object(meta_board, "LOG_PATH", os.path.join(self.root, "meta_fix.log")),
                 mock.patch.object(meta_board, "PUSH_PATH", os.path.join(self.root, "meta_pushes.json")),
                 mock.patch.object(meta_board, "SCAN_PATH", os.path.join(self.root, "meta_last_scan.json")),
+                mock.patch.object(meta_board, "NOTIFY_PATH", os.path.join(self.root, "meta_notified.json")),
+                mock.patch("bot.echo_bot.load_review_subs", return_value=[]),
+                mock.patch("bot.echo_bot.find_open_id_by_name", return_value=("", "没找到")),
                 mock.patch("bot.echo_bot.get_git_root", return_value=self.root),
                 mock.patch.object(unity_bridge, "refresh", return_value={"ok": True, "message": "Unity 已刷新资源（测试）。"}))
 
@@ -207,6 +210,35 @@ class MetaFixTest(unittest.TestCase):
             self.assertFalse(meta_board.JOB["ok"])
             self.assertFalse(meta_board.JOB["running"])
             self.assertIn("没有能处理的 meta", meta_board.JOB["message"])
+        finally:
+            for patch in patches:
+                patch.stop()
+
+    def test_board_notifies_dup_author_once(self) -> None:
+        self.add_remote()
+        patches = self.board_paths()
+        for patch in patches:
+            patch.start()
+        subs = [{"name": "测试员", "git_author": "TESTER", "open_id": "ou_x", "dm": False}]
+        try:
+            with mock.patch("bot.echo_bot.load_review_subs", return_value=subs), \
+                    mock.patch("bot.echo_bot.send_review_dm", return_value=True) as send:
+                meta_board.run("check", "同事")
+                meta_board.run("check", "同事")
+            self.assertEqual(send.call_count, 1)
+            open_id, title, text, _key = send.call_args.args
+            self.assertEqual(open_id, "ou_x")
+            self.assertIn("Assets/hero.mat.meta", text)
+            self.assertIn(OLD, text)
+            item = next(i for i in meta_board.view()["scan"]["items"] if i["kind"] == "guid")
+            self.assertEqual(item["notified"]["message"], "已飞书通知 测试员")
+            # 找不到人：不发，网页上标出来
+            os.remove(meta_board.NOTIFY_PATH)
+            with mock.patch("bot.echo_bot.send_review_dm") as send:
+                meta_board.run("check", "同事")
+            send.assert_not_called()
+            item = next(i for i in meta_board.view()["scan"]["items"] if i["kind"] == "guid")
+            self.assertFalse(item["notified"]["ok"])
         finally:
             for patch in patches:
                 patch.stop()
