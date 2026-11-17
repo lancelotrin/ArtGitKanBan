@@ -1,24 +1,25 @@
 """本地飞书知识库检索（参考 FeishuKonwledgeBot/src/text-search.mjs、wiki-kb.mjs）。
 
-wiki/ 下每个 json 是一篇缓存好的飞书文档：objToken、title、path、url、editTime、text。
-这里只读缓存做 BM25 检索，不调模型、不联网；把最相关的几篇文档片段（带路径和链接）拼成资料给 Codex。
-目录里文件变了（数量或修改时间）下次检索时自动重建索引。
-
-同步：.env 里配了 WIKI_SOURCE_DIR（例如 FeishuKonwledgeBot 的 data/wiki）时，后台启动时同步一次，
-之后每 WIKI_SYNC_MINUTES 分钟（默认 30）同步一次：新增、变化的文件复制过来，源里已经没有的删掉。
-复制先写临时文件、确认是完整的 JSON 再替换，源目录里写到一半的文件这一轮跳过，下一轮再拷。
+后台启动和每隔 WIKI_SYNC_MINUTES 分钟同步 wiki/，将变化的文档写入 SQLite，再更新 BM25 检索索引。
 """
+import argparse
+import asyncio
 import json
 import math
 import os
 import re
 import shutil
+import sqlite3
+import tempfile
 import threading
 import time
 from collections import Counter, defaultdict
-from common.paths import DATA_DIR
+from contextlib import closing, suppress
+from common.paths import DATA_DIR, ROOT_DIR
 
-WIKI_DIR = os.path.join(DATA_DIR, "wiki")
+WIKI_DIR = os.path.join(ROOT_DIR, "wiki")
+LEGACY_WIKI_DIR = os.path.join(DATA_DIR, "wiki")
+DATABASE_NAME = "index.sqlite"
 CONTEXT_CHARS = 9000
 
 STOP = {"这个", "那个", "什么", "怎么", "一下", "可以", "问题", "请问", "如何", "是否", "我们", "你们",
@@ -101,40 +102,104 @@ _lock = threading.Lock()
 _state = {"stamp": None, "docs": {}, "chunks": [], "index": None}
 
 
-def dir_stamp(root: str) -> tuple:
+def file_stamp(stat: os.stat_result) -> tuple:
+    return (stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
+
+
+def json_files(root: str) -> dict:
     try:
-        entries = [entry for entry in os.scandir(root) if entry.name.endswith(".json")]
-    except OSError:
-        return (root, 0, 0)
-    return (root, len(entries), max((entry.stat().st_mtime for entry in entries), default=0))
+        with os.scandir(root) as entries:
+            return {entry.name: file_stamp(entry.stat()) for entry in entries
+                    if entry.name.endswith(".json") and entry.is_file()}
+    except FileNotFoundError:
+        if not os.path.isdir(root):
+            return {}
+        raise  # 扫描时文件被移除，避免用不完整的清单更新数据库
+
+
+def read_doc(path: str) -> dict:
+    with open(path, encoding="utf-8") as file:
+        doc = json.load(file)
+    if not isinstance(doc, dict) or not isinstance(doc.get("objToken"), str) or not doc["objToken"]:
+        raise ValueError("知识库文档缺少 objToken")
+    return doc
+
+
+def update_database(root: str) -> dict:
+    """在一次 SQLite 事务中处理新增、修改和删除。坏文件保留上次入库的版本。"""
+    os.makedirs(root, exist_ok=True)
+    with closing(sqlite3.connect(os.path.join(root, DATABASE_NAME))) as db, db:
+        db.execute("BEGIN IMMEDIATE")
+        db.execute("""CREATE TABLE IF NOT EXISTS documents (
+            filename TEXT PRIMARY KEY, size INTEGER NOT NULL, mtime_ns INTEGER NOT NULL,
+            ctime_ns INTEGER NOT NULL, document TEXT NOT NULL
+        )""")
+        files = json_files(root)
+        known = {name: (size, mtime, ctime) for name, size, mtime, ctime in
+                 db.execute("SELECT filename, size, mtime_ns, ctime_ns FROM documents")}
+        updated = skipped = 0
+        for name, stamp in files.items():
+            if known.get(name) == stamp:
+                continue
+            path = os.path.join(root, name)
+            try:
+                doc = read_doc(path)
+                if file_stamp(os.stat(path)) != stamp:
+                    skipped += 1
+                    continue
+            except (OSError, ValueError):
+                skipped += 1
+                continue
+            db.execute("INSERT OR REPLACE INTO documents VALUES (?, ?, ?, ?, ?)",
+                       (name, *stamp, json.dumps(doc, ensure_ascii=False)))
+            updated += 1
+        removed = known.keys() - files.keys()
+        db.executemany("DELETE FROM documents WHERE filename = ?", ((name,) for name in removed))
+        total = db.execute("SELECT COUNT(*) FROM documents").fetchone()[0]
+    return {"updated": updated, "removed": len(removed), "skipped": skipped, "total": total}
 
 
 def load(root: str = "") -> dict:
-    """读缓存、建索引；目录没变就复用。"""
+    """从 SQLite 建检索索引。首次入库前或独立文档目录可直接读 JSON。"""
+    global _state
     root = root or WIKI_DIR
-    stamp = dir_stamp(root)
+    database = os.path.join(root, DATABASE_NAME)
     with _lock:
+        try:
+            stamp = (root, "sqlite", file_stamp(os.stat(database)))
+        except FileNotFoundError:
+            files = json_files(root)
+            stamp = (root, "json", files)
         if _state["stamp"] == stamp and _state["index"] is not None:
             return _state
+        if stamp[1] == "sqlite":
+            with closing(sqlite3.connect(database)) as db:
+                table = db.execute("SELECT 1 FROM sqlite_master WHERE name = 'documents'").fetchone()
+                if table:
+                    records = [json.loads(row[0]) for row in
+                               db.execute("SELECT document FROM documents ORDER BY filename")]
+                else:
+                    files = json_files(root)
+                    stamp = (root, "json", files)
+        if stamp[1] == "json":
+            records = []
+            for name in sorted(files):
+                try:
+                    records.append(read_doc(os.path.join(root, name)))
+                except (OSError, ValueError):
+                    continue
         docs, chunks = {}, []
-        for name in sorted(os.listdir(root)) if os.path.isdir(root) else []:
-            if not name.endswith(".json"):
-                continue
-            try:
-                with open(os.path.join(root, name), encoding="utf-8") as file:
-                    doc = json.load(file)
-            except (OSError, ValueError):
-                continue  # 坏文件跳过
-            token = doc.get("objToken") if isinstance(doc, dict) else None
-            if not token:
-                continue
-            doc["path"] = [str(part) for part in (doc.get("path") or [doc.get("title") or token])]
+        for doc in records:
+            token = doc["objToken"]
+            path = doc.get("path")
+            doc["path"] = [str(part) for part in path] if isinstance(path, list) and path else [str(doc.get("title") or token)]
             docs[token] = doc
             heading = " / ".join(doc["path"])
             for part in chunk_text(doc.get("text") or "") or [""]:
                 # 标题路径写两遍，提高标题命中的权重（和参考项目一致）
                 chunks.append((token, f"{heading}\n{heading}\n{part}", part))
-        _state.update(stamp=stamp, docs=docs, chunks=chunks, index=Bm25([text for _, text, _ in chunks]))
+        _state = {"stamp": stamp, "docs": docs, "chunks": chunks,
+                  "index": Bm25([text for _, text, _ in chunks])}
         return _state
 
 
@@ -184,23 +249,27 @@ def sync(source: str, dest: str = "") -> dict:
         target = os.path.join(dest, name)
         try:
             mine = os.stat(target)
-            if mine.st_size == stat.st_size and int(mine.st_mtime) == int(stat.st_mtime):
+            if mine.st_size == stat.st_size and mine.st_mtime_ns == stat.st_mtime_ns:
                 continue
         except OSError:
             pass
-        temp = target + ".tmp"
+        temp = None
         try:
+            fd, temp = tempfile.mkstemp(dir=dest, suffix=".tmp")
+            os.close(fd)
             shutil.copy2(os.path.join(source, name), temp)
-            with open(temp, encoding="utf-8") as file:
-                json.load(file)  # 源文件正在写时可能不完整，这一轮先不换
+            read_doc(temp)
+            if file_stamp(os.stat(os.path.join(source, name))) != file_stamp(stat):
+                skipped += 1
+                continue
             os.replace(temp, target)
             copied += 1
         except (OSError, ValueError):
             skipped += 1
-            try:
-                os.remove(temp)
-            except OSError:
-                pass
+        finally:
+            if temp:
+                with suppress(FileNotFoundError):
+                    os.unlink(temp)
     if wanted:  # 源目录是空的多半是那边出了问题，不跟着清空
         for entry in os.scandir(dest):
             if entry.name.endswith(".json") and entry.name not in wanted:
@@ -212,41 +281,57 @@ def sync(source: str, dest: str = "") -> dict:
     return {"copied": copied, "removed": removed, "skipped": skipped, "total": len(wanted)}
 
 
-_sync_started = threading.Event()
+def refresh(log=print) -> dict:
+    """同步文件并扫描入库。源目录暂时不可用时仍扫描本地缓存。"""
+    if not os.path.exists(WIKI_DIR) and os.path.isdir(LEGACY_WIKI_DIR):
+        try:
+            os.rename(LEGACY_WIKI_DIR, WIKI_DIR)
+        except FileNotFoundError:
+            if not os.path.isdir(WIKI_DIR):
+                raise
+    source = setting("WIKI_SOURCE_DIR")
+    sync_error = None
+    if source:
+        try:
+            result = sync(source)
+            log(f"[wiki] 同步到 wiki/：复制 {result['copied']}，删除 {result['removed']}，"
+                f"跳过 {result['skipped']}，源目录共 {result['total']} 篇")
+        except OSError as error:
+            sync_error = error
+            log(f"[wiki] 文件同步失败，继续扫描本地缓存：{error}")
+    result = update_database(WIKI_DIR)
+    load()
+    log(f"[wiki] SQLite 扫描完成：更新 {result['updated']}，删除 {result['removed']}，"
+        f"跳过 {result['skipped']}，数据库共 {result['total']} 篇")
+    if sync_error:
+        raise sync_error
+    return result
 
 
-def start_sync_loop(log=print) -> bool:
-    """配了 WIKI_SOURCE_DIR 就起后台线程定期同步；每轮现读 .env，改了不用重启。"""
-    if _sync_started.is_set() or not setting("WIKI_SOURCE_DIR"):
-        return False
-    _sync_started.set()
-
-    def loop() -> None:
-        while True:
-            source = setting("WIKI_SOURCE_DIR")
-            if source:
-                try:
-                    result = sync(source)
-                    if result["copied"] or result["removed"] or result["skipped"]:
-                        log(f"[wiki] 同步 {source}：复制 {result['copied']}，删除 {result['removed']}，"
-                            f"跳过 {result['skipped']}，共 {result['total']} 篇")
-                except OSError as error:
-                    log(f"[wiki] 同步失败：{error}")
-            try:
-                minutes = max(1, int(setting("WIKI_SYNC_MINUTES", "30")))
-            except ValueError:
-                minutes = 30
-            time.sleep(minutes * 60)
-
-    threading.Thread(target=loop, name="wiki-sync", daemon=True).start()
-    return True
+async def sync_loop(log=print) -> None:
+    """由后台生命周期管理，每轮重新读取同步配置。"""
+    while True:
+        try:
+            await asyncio.to_thread(refresh, log)
+        except (OSError, sqlite3.Error) as error:
+            log(f"[wiki] 本轮更新失败：{error}")
+        try:
+            minutes = max(1, int(setting("WIKI_SYNC_MINUTES", "30")))
+        except ValueError:
+            minutes = 30
+        await asyncio.sleep(minutes * 60)
 
 
 if __name__ == "__main__":
-    import sys
-    import time
-    started = time.time()
-    found = search(" ".join(sys.argv[1:]) or "圣遗物 命名")
-    print(f"{len(_state['docs'])} 篇 / {len(_state['chunks'])} 段，用时 {time.time() - started:.1f}s")
-    for doc in found["docs"]:
-        print("-", " / ".join(doc["path"]), doc.get("url"))
+    parser = argparse.ArgumentParser(description="同步或检索本地知识库")
+    parser.add_argument("--sync", action="store_true", help="立即同步并扫描入库")
+    parser.add_argument("query", nargs="*")
+    args = parser.parse_args()
+    if args.sync:
+        refresh()
+    if args.query or not args.sync:
+        started = time.monotonic()
+        found = search(" ".join(args.query) or "圣遗物 命名")
+        print(f"{len(_state['docs'])} 篇 / {len(_state['chunks'])} 段，用时 {time.monotonic() - started:.1f}s")
+        for doc in found["docs"]:
+            print("-", " / ".join(doc["path"]), doc.get("url"))

@@ -1014,9 +1014,6 @@ def main() -> None:
     migrate_legacy_data(lambda text: print(text, flush=True))
     apply_models_here()
     start_board_api()
-    from common import wiki_kb
-    if wiki_kb.start_sync_loop(lambda text: print(text, flush=True)):
-        print(f"知识库每 {wiki_kb.setting('WIKI_SYNC_MINUTES', '30')} 分钟从 {wiki_kb.setting('WIKI_SOURCE_DIR')} 同步到 wiki/", flush=True)
     server = QuietHTTPServer((HOST, PORT), Handler)
     print(f"大豆后台 http://{HOST}:{PORT}  （复盘 /review/ · 心愿墙 /wish/ · 炸线看板 /bomb/ · 合并确认 /merge/）", flush=True)
     server.serve_forever()

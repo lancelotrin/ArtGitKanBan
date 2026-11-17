@@ -4,8 +4,11 @@
 """
 import json
 import os
+import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
+from unittest import mock
 
 from common import wiki_kb
 
@@ -58,6 +61,34 @@ class WikiSyncTest(unittest.TestCase):
     def test_missing_source(self) -> None:
         with self.assertRaises(FileNotFoundError):
             wiki_kb.sync(os.path.join(self.tmp.name, "nope"), self.dest)
+
+    def test_refresh_updates_search_and_preserves_last_valid_document(self) -> None:
+        write(self.source, "A.json", doc("A", "legacyword"))
+        write(self.source, "B.json", doc("B", "removedword"))
+        legacy = os.path.join(self.tmp.name, "legacy")
+        os.rename(self.dest, legacy)
+        db_path = os.path.join(self.dest, wiki_kb.DATABASE_NAME)
+        with mock.patch.object(wiki_kb, "WIKI_DIR", self.dest), \
+                mock.patch.object(wiki_kb, "LEGACY_WIKI_DIR", legacy), \
+                mock.patch.object(wiki_kb, "setting", return_value=self.source):
+            self.assertEqual(wiki_kb.refresh(log=mock.Mock())["total"], 2)
+            self.assertFalse(os.path.exists(legacy))
+            self.assertEqual(wiki_kb.refresh(log=mock.Mock())["updated"], 0)
+            self.assertIn("legacyword", wiki_kb.search("legacyword")["context"])
+
+            write(self.source, "A.json", '{"objToken":')
+            os.unlink(os.path.join(self.source, "B.json"))
+            self.assertEqual(wiki_kb.refresh(log=mock.Mock())["removed"], 1)
+            self.assertIn("legacyword", wiki_kb.search("legacyword")["context"])
+            self.assertEqual(wiki_kb.search("removedword")["docs"], [])
+
+            write(self.source, "A.json", doc("A", "latestword"))
+            self.assertEqual(wiki_kb.refresh(log=mock.Mock())["updated"], 1)
+            self.assertIn("latestword", wiki_kb.search("latestword")["context"])
+            self.assertEqual(wiki_kb.search("legacyword")["docs"], [])
+            with closing(sqlite3.connect(db_path)) as db:
+                stored = db.execute("SELECT document FROM documents").fetchall()
+            self.assertEqual([json.loads(row[0])["text"] for row in stored], ["latestword"])
 
 
 if __name__ == "__main__":

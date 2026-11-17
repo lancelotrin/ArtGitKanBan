@@ -1,4 +1,4 @@
-"""项目里的固定位置：代码按模块放在子目录，运行数据全放 data/，.env 留在项目根目录。
+"""项目里的固定位置：运行数据放 data/，知识库和 .env 留在项目根目录。
 
 以前数据文件直接放在项目根目录；后台和机器人启动时调 migrate_legacy_data() 把它们挪进 data/。
 """
@@ -18,7 +18,7 @@ LEGACY_DATA = (
     "chat_history.json", "gold_cache.json", "last_shader.json", "bilibili_cookie.txt",
     "chats.sqlite3", "chats.sqlite3-wal", "chats.sqlite3-shm",
     "ref_index.sqlite", "ref_index.sqlite-wal", "ref_index.sqlite-shm",
-    "wiki", "stickers", "_img", "_coach_cwd", "_codex_work", "_agent_out",
+    "stickers", "_img", "_coach_cwd", "_codex_work", "_agent_out",
     "bot.log", "bot.err.log", "console.log", "regress_out.txt",
 )
 

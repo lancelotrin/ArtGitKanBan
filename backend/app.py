@@ -3,8 +3,10 @@
 console/（python -m console）仍是对外的门（80，飞书登录回调和退出在那里），它按下面的路由表把请求转发到这里（只听 127.0.0.1）。
 单独调试：.venv/bin/python -m backend
 """
+import asyncio
 import os
 import threading
+from contextlib import asynccontextmanager, suppress
 from urllib.parse import urlencode
 
 from fastapi import FastAPI, HTTPException, Request
@@ -13,6 +15,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend.deps import ROOT_DIR, auth
+from common import wiki_kb
 
 from backend.routers import admin, bomb, chat, core, docwatch, help, merge, meta, review, wish
 
@@ -31,8 +34,19 @@ PROXY_EXCLUDE = ("/merge/s/",)
 # 不用登录就能访问的：登录页、前端静态文件、登录页要读的接口。
 PUBLIC_ROUTES = PUBLIC_PAGES + ("/static", "/api/v1/auth")
 
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    wiki_task = asyncio.create_task(wiki_kb.sync_loop(lambda text: print(text, flush=True)))
+    try:
+        yield
+    finally:
+        wiki_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await wiki_task
+
+
 app = FastAPI(title="大豆看板 API", version="1", docs_url="/api/v1/docs", openapi_url="/api/v1/openapi.json",
-              redoc_url=None)
+              redoc_url=None, lifespan=lifespan)
 
 
 @app.exception_handler(HTTPException)

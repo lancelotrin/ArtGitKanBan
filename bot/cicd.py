@@ -196,6 +196,9 @@ def build_failure_card(payload: dict, analysis: str, person: dict = None, also_a
     # 不认识的触发人显示成「旅行者」；数字 ID 在构建信息里（触发人ID）
     lines = [f"{mention} 原因：{str(payload.get('reason') or '未知原因')[:500]}", f"触发人：{person.get('name') or '旅行者'}", job]
     lines += [f"{label}：{str(meta[key])[:200]}" for key, label in META_LABELS if meta.get(key)]
+    log_url = meta.get("logUrl")
+    if isinstance(log_url, str) and log_url.strip():
+        lines.append(f"日志：[command.log]({log_url.strip()})")
     content = "\n".join(x for x in lines if x)
     content += f"\n\n**AI 报错分析**\n{analysis}" if analysis else "\n\n（AI 分析暂不可用，请查看打包日志）"
     return {"config": {"wide_screen_mode": True},

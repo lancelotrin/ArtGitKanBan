@@ -12,16 +12,15 @@
     }
   ],
   "seen": {
-    "main": "956bd4011d5c8b4e0ef82e8c712b58792b293939",
+    "main": "6ff5944369486fa9022d269d6f5556c5960fd8a9",
     "CBT2_bugfix": "40e069a8bba48ff6850414e744efeabd5ebfe01c"
   },
   "told": {
-    "main": [],
-    "CBT2_bugfix": []
+    "main": []
   },
-  "next_at": "2026-11-11T17:33:30+08:00",
+  "next_at": "2026-11-17T16:35:39+08:00",
   "revision": 1,
   "told_days": 1,
-  "last_result": "最近 1 天没有新的匹配文件。",
-  "last_at": "2026-11-11T17:03:30+08:00"
+  "last_result": "盯目录 · 最近 1 天\n`origin/main`：\n- `bd04ae8eff3` 2026-11-17 15:29 majiao\n  【性能优化】渲染流程优化 https://project.feishu.cn/0m47pa/story/detail/7168390507\n  Client/Assets/Bundle/Shader/URP_Scene_Decal.shader\n- `92500dd5a90` 2026-11-17 14:32 zhuhui\n  【Assets】无效关键字清理  https://project.feishu.cn/0m47pa/story/detail/7163363144\n  Client/Assets/Bundle/Shader/URP_UVEffect_Manual.shader\n  Client/Assets/Bundle/Shader/URP_UVEffect_Warning_Stencil_Uber.shader\n  Client/Assets/Bundle/Shader/URP_UVEffect_fire.shader\n- `2589b",
+  "last_at": "2026-11-17T16:05:41+08:00"
 }
